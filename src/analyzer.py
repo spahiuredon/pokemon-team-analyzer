@@ -126,8 +126,6 @@ class TeamAnalyzer:
         """Heatmap: Zeilen = Teammitglieder, Spalten = Angriffstypen, Farbe = Multiplikator."""
         import matplotlib.pyplot as plt
 
-        # Wir bauen die Matrix einmal sauber als DataFrame, dann mit imshow plotten
-        # (statt seaborn zu importieren, das ist nicht in den Anforderungen).
         data = []
         names = []
         for p in self._team:
@@ -145,7 +143,7 @@ class TeamAnalyzer:
         ax.set_xticklabels(ALL_TYPES, rotation=45, ha="right")
         ax.set_yticks(range(len(df)))
         ax.set_yticklabels(df.index)
-        # Werte auf die Felder schreiben (kleines Hilfsmittel zum Lesen)
+        # Werte auf die Felder schreiben
         for i in range(df.shape[0]):
             for j in range(df.shape[1]):
                 ax.text(j, i, f"{df.values[i, j]:g}", ha="center", va="center",

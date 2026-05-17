@@ -1,4 +1,4 @@
-"""Unit-Tests für Team und TeamAnalyzer (inkl. Pandas-Pipeline)."""
+"""Unit-Tests für Team und TeamAnalyzer (inklusive Pandas-Pipeline)."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from src.team import Team
 
 
 def make_pokemon(name: str, pid: int, types: list[str], total: int = 300) -> Pokemon:
-    # Wir verteilen die Total-Stats gleichmäßig auf 6 Slots (egal welche Werte,
-    # solange die Summe stimmt).
     per = total // 6
     rest = total - per * 6
     stats = {
@@ -83,7 +81,7 @@ class AnalyzerTests(unittest.TestCase):
         cov = self.analyzer.type_coverage()
         # Alle 18 Typen müssen Zeilen haben.
         self.assertEqual(len(cov), 18)
-        # Summe weak+neutral+resists+immune muss IMMER der Teamgröße entsprechen,
+        # Summe weak+neutral+resists+immune muss immer der Teamgröße entsprechen,
         # weil jedes Mitglied genau einer Kategorie zugeordnet wird.
         team_size = len(self.team)
         sums = cov[["weak", "neutral", "resists", "immune"]].sum(axis=1)

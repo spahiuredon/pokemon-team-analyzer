@@ -73,7 +73,6 @@ class TypeChart:
     """Berechnet, wie effektiv ein Angriff gegen ein (Dual-)Typ-Pokemon ist."""
 
     def __init__(self, matchups: dict[str, dict[str, float]] | None = None) -> None:
-        # Wir erlauben es, eine eigene Tabelle zu injizieren -> super für Tests.
         self._matchups = matchups if matchups is not None else TYPE_MATCHUPS
         self._types = tuple(ALL_TYPES)
 

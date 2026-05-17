@@ -1,6 +1,5 @@
 """Pokemon-Klassen.
 
-Demonstriert OOP-Konzepte aus V02-V04:
 - Konstruktor (__init__)
 - Kapselung (private Attribute mit Validierung)
 - Vererbung: MegaPokemon erbt von Pokemon und überschreibt total_stats()

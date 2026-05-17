@@ -1,10 +1,6 @@
 """Vorgefertigte Champion-Teams aus mehreren Pokemon-Generationen.
 
-Die Teams sind kuratiert aus den Hauptspielen - berühmte Trainer
-und ihre Endgame-Teams. Wir referenzieren sie nur per Namen; die
-echten Pokemon-Daten kommen über den API-Client (Cache oder Netz).
-
-Dieses Modul ist bewusst nur Daten + eine kleine Lade-Funktion -
+Dieses Modul ist bewusst nur Daten + eine kleine Lade-Funktion somit
 keine Logik, keine Klassen. So bleibt es einfach zu erweitern.
 """
 

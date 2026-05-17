@@ -1,7 +1,4 @@
-"""Tests für den PokeAPI-Client - ohne echte Netzwerkaufrufe.
-
-Wir patchen `urllib.request.urlopen`, damit die Tests deterministisch sind
-und auch ohne Internet laufen.
+"""Tests für den PokeAPI-Client.
 """
 
 from __future__ import annotations

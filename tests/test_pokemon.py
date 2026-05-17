@@ -57,7 +57,7 @@ class PokemonTests(unittest.TestCase):
                     stats={"hp": 10})
 
     def test_stats_property_returns_copy(self):
-        # Wichtig: externe Mutation darf das Pokemon nicht ändern (Kapselung).
+        # Externe Mutation darf das Pokemon nicht ändern.
         p = Pokemon("a", 1, ["normal"], make_stats())
         s = p.stats
         s["hp"] = 999
