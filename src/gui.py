@@ -1,0 +1,482 @@
+"""Einfaches Tkinter-GUI für den Pokemon Team-Analyzer.
+
+Bietet eine grafische Oberfläche, in der man:
+- Pokemon zum Team hinzufügt (Eingabefeld oder Auswahl aus Cache-Liste mit Bildchen)
+- Pokemon wieder entfernt
+- Die Stats-Tabelle (Pandas DataFrame) ansieht
+- Die Typ-Coverage anzeigen lässt
+- Drei Diagramme direkt im Fenster rendert (matplotlib eingebettet)
+
+Sprites werden bevorzugt aus dem mitgelieferten Cache geladen
+(typ-gefärbte Platzhalter), bei Bedarf vom Server der PokeAPI nachgezogen.
+
+Tkinter ist Teil der Python-Standardbibliothek, also keine extra Installation.
+Pillow (PIL) wird für Bildverarbeitung benötigt (steht in requirements.txt).
+
+Aufruf:
+    python -m src.gui
+"""
+
+from __future__ import annotations
+
+import tkinter as tk
+from pathlib import Path
+from tkinter import messagebox, ttk
+
+import matplotlib
+
+matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
+
+try:
+    from PIL import Image, ImageTk
+    HAS_PIL = True
+except ImportError:  # pragma: no cover - GUI braucht Pillow ohnehin
+    HAS_PIL = False
+
+from .analyzer import TeamAnalyzer
+from .api_client import PokeAPIClient, PokeAPIError
+from .pokemon import Pokemon
+from .presets import available_presets, load_preset
+from .team import Team
+
+
+# Größe für Sprites in der Team-Übersicht und der Cache-Liste.
+SPRITE_SIZE = 64
+
+
+class PokemonTeamGUI:
+    """Hauptfenster der Anwendung."""
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.root.title("Pokemon Team-Analyzer")
+        self.root.geometry("1200x780")
+
+        # Cache-Ordner: derselbe wie für das Notebook (data/cache).
+        project_root = Path(__file__).resolve().parent.parent
+        self.client = PokeAPIClient(cache_dir=project_root / "data" / "cache",
+                                    sprite_dir=project_root / "data" / "sprites")
+        self.team = Team("Mein Team")
+        # Aktuell im rechten Bereich angezeigte matplotlib-Figur
+        self._current_canvas: FigureCanvasTkAgg | None = None
+        # Bilder dürfen NICHT vom Garbage Collector eingesammelt werden, sonst
+        # zeigt Tk nur leere Felder. Wir halten Referenzen in diesem Dict.
+        self._photo_cache: dict[int, ImageTk.PhotoImage] = {}
+
+        # ttk-Stil aufhübschen
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass  # Fallback auf Default
+
+        self._build_layout()
+        self._refresh_team_view()
+        self._populate_cached_pokemon()
+
+    # ------------------------------------------------------------------ #
+    # Layout
+    # ------------------------------------------------------------------ #
+    def _build_layout(self) -> None:
+        # Linke Spalte: Team-Verwaltung
+        left = ttk.Frame(self.root, padding=10)
+        left.pack(side=tk.LEFT, fill=tk.Y)
+
+        ttk.Label(left, text="Pokemon Team-Analyzer",
+                  font=("Helvetica", 14, "bold")).pack(pady=(0, 10))
+
+        # Eingabefeld
+        ttk.Label(left, text="Pokemon-Name (oder ID):").pack(anchor=tk.W)
+        self.name_var = tk.StringVar()
+        entry = ttk.Entry(left, textvariable=self.name_var, width=30)
+        entry.pack(fill=tk.X)
+        entry.bind("<Return>", lambda _e: self._add_pokemon())
+
+        ttk.Button(left, text="Zum Team hinzufügen",
+                   command=self._add_pokemon).pack(fill=tk.X, pady=(4, 10))
+
+        # Vorgefertigte Teams - Dropdown + Lade-Button
+        ttk.Label(left, text="Vorgefertigtes Team:").pack(anchor=tk.W)
+        self.preset_var = tk.StringVar()
+        preset_combo = ttk.Combobox(left, textvariable=self.preset_var,
+                                    values=available_presets(),
+                                    state="readonly")
+        preset_combo.pack(fill=tk.X)
+        # Default: erstes Preset selektieren, damit der Button sofort etwas tut
+        presets = available_presets()
+        if presets:
+            preset_combo.current(0)
+        ttk.Button(left, text="Team laden (ersetzt aktuelles)",
+                   command=self._load_preset).pack(fill=tk.X, pady=(4, 10))
+
+        # Cache-Liste mit Sprites: Treeview mit Bild + Name
+        ttk.Label(left, text="Verfügbar (Doppelklick fügt hinzu):").pack(anchor=tk.W)
+        cache_frame = ttk.Frame(left)
+        cache_frame.pack(fill=tk.BOTH, expand=False)
+        self.cache_tree = ttk.Treeview(cache_frame, columns=("types",),
+                                       show="tree headings", height=8)
+        self.cache_tree.heading("#0", text="Pokemon")
+        self.cache_tree.heading("types", text="Typ(en)")
+        self.cache_tree.column("#0", width=200, anchor=tk.W)
+        self.cache_tree.column("types", width=120, anchor=tk.W)
+        cache_scroll = ttk.Scrollbar(cache_frame, orient=tk.VERTICAL,
+                                     command=self.cache_tree.yview)
+        self.cache_tree.configure(yscrollcommand=cache_scroll.set)
+        self.cache_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        cache_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.cache_tree.bind("<Double-Button-1>", lambda _e: self._add_from_cache())
+
+        ttk.Separator(left, orient="horizontal").pack(fill=tk.X, pady=10)
+
+        # Aktionen
+        ttk.Label(left, text="Analyse:").pack(anchor=tk.W)
+        ttk.Button(left, text="Stats-Tabelle",
+                   command=self._show_stats).pack(fill=tk.X, pady=2)
+        ttk.Button(left, text="Typ-Coverage",
+                   command=self._show_coverage).pack(fill=tk.X, pady=2)
+        ttk.Button(left, text="Plot: Gesamt-Stats",
+                   command=self._plot_totals).pack(fill=tk.X, pady=2)
+        ttk.Button(left, text="Plot: Stats-Vergleich",
+                   command=self._plot_stats).pack(fill=tk.X, pady=2)
+        ttk.Button(left, text="Plot: Typ-Heatmap",
+                   command=self._plot_heatmap).pack(fill=tk.X, pady=2)
+
+        # Mitte: Team-Übersicht mit Sprites
+        middle = ttk.LabelFrame(self.root, text="Aktuelles Team",
+                                padding=10)
+        middle.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 0), pady=10)
+        self.team_inner = ttk.Frame(middle)
+        self.team_inner.pack(fill=tk.BOTH, expand=True)
+        # Buttons unter dem Team
+        team_buttons = ttk.Frame(middle)
+        team_buttons.pack(fill=tk.X, pady=(8, 0))
+        ttk.Button(team_buttons, text="Ausgewähltes entfernen",
+                   command=self._remove_selected).pack(side=tk.LEFT, padx=2)
+        ttk.Button(team_buttons, text="Team leeren",
+                   command=self._clear_team).pack(side=tk.LEFT, padx=2)
+
+        # Aktuell selektiertes Team-Mitglied (über Klick gesetzt)
+        self._selected_team_index: int | None = None
+
+        # Rechte Spalte: Ausgabe
+        right = ttk.Frame(self.root, padding=10)
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        self.output_frame = right
+
+        # Notebook-Widget für Tabs: "Tabelle" (Text) und "Plot" (Canvas)
+        self.tabs = ttk.Notebook(right)
+        self.tabs.pack(fill=tk.BOTH, expand=True)
+
+        self.text_tab = ttk.Frame(self.tabs)
+        self.plot_tab = ttk.Frame(self.tabs)
+        self.tabs.add(self.text_tab, text="Tabelle / Text")
+        self.tabs.add(self.plot_tab, text="Plot")
+
+        self.text_widget = tk.Text(self.text_tab, font=("Courier", 10), wrap=tk.NONE)
+        scroll_y = ttk.Scrollbar(self.text_tab, command=self.text_widget.yview)
+        scroll_x = ttk.Scrollbar(self.text_tab, command=self.text_widget.xview,
+                                 orient=tk.HORIZONTAL)
+        self.text_widget.configure(yscrollcommand=scroll_y.set,
+                                   xscrollcommand=scroll_x.set, state=tk.DISABLED)
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.text_widget.pack(fill=tk.BOTH, expand=True)
+
+        # Status-Zeile am unteren Rand
+        self.status_var = tk.StringVar(value="Bereit.")
+        ttk.Label(self.root, textvariable=self.status_var,
+                  relief=tk.SUNKEN, anchor=tk.W).pack(side=tk.BOTTOM, fill=tk.X)
+
+    # ------------------------------------------------------------------ #
+    # Sprite-Helfer
+    # ------------------------------------------------------------------ #
+    def _photo_for(self, pokemon: Pokemon, size: int = SPRITE_SIZE) -> tk.PhotoImage | None:
+        """Liefert ein Tk-PhotoImage für ein Pokemon, oder None bei Fehler.
+
+        Wir cachen die fertigen Bilder im Dictionary, damit:
+        1. das Resizen pro Pokemon nur einmal stattfindet
+        2. der Garbage Collector sie nicht einsammelt (Tk-Falle!)
+        """
+        if not HAS_PIL:
+            return None
+        key = (pokemon.pokedex_id, size)
+        if key in self._photo_cache:
+            return self._photo_cache[key]
+
+        sprite_path = self.client.get_sprite(pokemon.pokedex_id, pokemon.sprite_url)
+        if sprite_path is None:
+            return None
+        try:
+            img = Image.open(sprite_path).convert("RGBA")
+            img.thumbnail((size, size), Image.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+        except (OSError, ValueError) as exc:
+            self._set_status(f"Sprite konnte nicht geladen werden: {exc}")
+            return None
+        self._photo_cache[key] = photo
+        return photo
+
+    # ------------------------------------------------------------------ #
+    # Team-Aktionen
+    # ------------------------------------------------------------------ #
+    def _add_pokemon(self) -> None:
+        name = self.name_var.get().strip()
+        if not name:
+            return
+        self._add_by_name(name)
+        self.name_var.set("")
+
+    def _add_from_cache(self) -> None:
+        selection = self.cache_tree.selection()
+        if not selection:
+            return
+        # Wir haben den Namen als iid gesetzt
+        name = selection[0]
+        self._add_by_name(name)
+
+    def _add_by_name(self, name: str) -> None:
+        try:
+            data = self.client.get_pokemon(name)
+            pokemon = Pokemon.from_api(data)
+            self.team.add(pokemon)
+        except (PokeAPIError, ValueError) as exc:
+            # V06 - Fehler abfangen und freundlich anzeigen, nicht crashen.
+            messagebox.showerror("Fehler", f"{exc}")
+            self._set_status(f"Fehler: {exc}")
+            return
+        self._refresh_team_view()
+        self._set_status(f"{pokemon.name.capitalize()} zum Team hinzugefügt.")
+
+    def _remove_selected(self) -> None:
+        if self._selected_team_index is None:
+            messagebox.showinfo("Hinweis",
+                                "Bitte zuerst ein Pokemon im Team anklicken.")
+            return
+        members = list(self.team.members)
+        if self._selected_team_index >= len(members):
+            return
+        name = members[self._selected_team_index].name
+        try:
+            self.team.remove(name)
+        except KeyError as exc:
+            messagebox.showerror("Fehler", str(exc))
+            return
+        self._selected_team_index = None
+        self._refresh_team_view()
+        self._set_status(f"{name} entfernt.")
+
+    def _clear_team(self) -> None:
+        self.team = Team(self.team.name)
+        self._selected_team_index = None
+        self._refresh_team_view()
+        self._clear_output()
+        self._set_status("Team geleert.")
+
+    def _load_preset(self) -> None:
+        """Lädt das im Dropdown ausgewählte Preset und ersetzt das aktuelle Team."""
+        name = self.preset_var.get().strip()
+        if not name:
+            messagebox.showinfo("Hinweis", "Bitte zuerst ein Preset auswählen.")
+            return
+        try:
+            self.team = load_preset(name, self.client)
+        except (PokeAPIError, ValueError, KeyError) as exc:
+            messagebox.showerror("Fehler beim Laden", str(exc))
+            self._set_status(f"Preset-Fehler: {exc}")
+            return
+        self._selected_team_index = None
+        self._refresh_team_view()
+        self._set_status(f"Preset geladen: {name}")
+
+    # ------------------------------------------------------------------ #
+    # Analyse-Aktionen (unverändert gegenüber der vorherigen Version)
+    # ------------------------------------------------------------------ #
+    def _require_analyzer(self) -> TeamAnalyzer | None:
+        if len(self.team) == 0:
+            messagebox.showinfo("Hinweis",
+                                "Bitte zuerst mindestens ein Pokemon hinzufügen.")
+            return None
+        return TeamAnalyzer(self.team)
+
+    def _show_stats(self) -> None:
+        analyzer = self._require_analyzer()
+        if analyzer is None:
+            return
+        df = analyzer.to_stats_dataframe()
+        summary = analyzer.summary()
+        text = (
+            "Stats pro Pokemon:\n"
+            f"{df.to_string()}\n\n"
+            "Aggregierte Statistik:\n"
+            f"{summary.to_string()}"
+        )
+        self._show_text(text)
+
+    def _show_coverage(self) -> None:
+        analyzer = self._require_analyzer()
+        if analyzer is None:
+            return
+        cov = analyzer.type_coverage()
+        weakest = analyzer.biggest_weaknesses()
+        text = (
+            "Typ-Coverage (Anzahl Teammitglieder pro Kategorie):\n"
+            f"{cov.to_string()}\n\n"
+            "Grösste Schwächen (Top 5):\n"
+            f"{weakest.to_string()}"
+        )
+        self._show_text(text)
+
+    def _plot_totals(self) -> None:
+        analyzer = self._require_analyzer()
+        if analyzer is None:
+            return
+        self._show_plot(lambda ax: analyzer.plot_total_stats(ax=ax))
+
+    def _plot_stats(self) -> None:
+        analyzer = self._require_analyzer()
+        if analyzer is None:
+            return
+        self._show_plot(lambda ax: analyzer.plot_stats_comparison(ax=ax),
+                        figsize=(8, 5))
+
+    def _plot_heatmap(self) -> None:
+        analyzer = self._require_analyzer()
+        if analyzer is None:
+            return
+        self._show_plot(lambda _ax: analyzer.plot_type_coverage_heatmap(),
+                        from_method=True)
+
+    # ------------------------------------------------------------------ #
+    # Anzeige-Helfer
+    # ------------------------------------------------------------------ #
+    def _show_text(self, content: str) -> None:
+        self.tabs.select(self.text_tab)
+        self.text_widget.configure(state=tk.NORMAL)
+        self.text_widget.delete("1.0", tk.END)
+        self.text_widget.insert("1.0", content)
+        self.text_widget.configure(state=tk.DISABLED)
+
+    def _show_plot(self, plot_fn, figsize=(7, 4), from_method: bool = False) -> None:
+        self._clear_plot_tab()
+        if from_method:
+            ax = plot_fn(None)
+            fig = ax.figure
+        else:
+            fig, ax = plt.subplots(figsize=figsize)
+            plot_fn(ax)
+        canvas = FigureCanvasTkAgg(fig, master=self.plot_tab)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self._current_canvas = canvas
+        self.tabs.select(self.plot_tab)
+
+    def _clear_plot_tab(self) -> None:
+        for child in self.plot_tab.winfo_children():
+            child.destroy()
+        if self._current_canvas is not None:
+            plt.close(self._current_canvas.figure)
+            self._current_canvas = None
+
+    def _clear_output(self) -> None:
+        self._clear_plot_tab()
+        self.text_widget.configure(state=tk.NORMAL)
+        self.text_widget.delete("1.0", tk.END)
+        self.text_widget.configure(state=tk.DISABLED)
+
+    # ------------------------------------------------------------------ #
+    # Team-Anzeige neu rendern (mit Sprites)
+    # ------------------------------------------------------------------ #
+    def _refresh_team_view(self) -> None:
+        # Alles entsorgen und neu aufbauen - das Team hat max. 6 Slots, daher
+        # ist das auch performance-mässig vernachlässigbar.
+        for child in self.team_inner.winfo_children():
+            child.destroy()
+
+        if len(self.team) == 0:
+            ttk.Label(self.team_inner,
+                      text="Noch leer. Pokemon links auswählen oder eingeben.",
+                      foreground="#666666").pack(pady=20)
+            return
+
+        for i, pokemon in enumerate(self.team.members):
+            row = ttk.Frame(self.team_inner, relief="ridge", padding=6)
+            row.pack(fill=tk.X, pady=2)
+            # Hervorhebung wenn ausgewählt
+            if i == self._selected_team_index:
+                row.configure(relief="solid")
+
+            # Sprite
+            photo = self._photo_for(pokemon)
+            if photo is not None:
+                lbl = ttk.Label(row, image=photo)
+                lbl.image = photo  # zusätzliche Referenz: Tk-typische Falle vermeiden
+                lbl.pack(side=tk.LEFT, padx=(0, 8))
+
+            # Textblock
+            types_str = " / ".join(t.capitalize() for t in pokemon.types)
+            info = ttk.Frame(row)
+            info.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ttk.Label(info, text=f"#{pokemon.pokedex_id} {pokemon.name.capitalize()}",
+                      font=("Helvetica", 11, "bold")).pack(anchor=tk.W)
+            ttk.Label(info, text=types_str, foreground="#444444").pack(anchor=tk.W)
+            ttk.Label(info, text=f"Total: {pokemon.total_stats()}",
+                      foreground="#1d4ed8").pack(anchor=tk.W)
+
+            # Klick auf die Reihe wählt sie aus
+            for widget in (row, info, *info.winfo_children()):
+                widget.bind("<Button-1>",
+                            lambda _e, idx=i: self._select_team_member(idx))
+
+    def _select_team_member(self, index: int) -> None:
+        self._selected_team_index = index
+        self._refresh_team_view()
+        member = self.team.members[index]
+        self._set_status(f"Ausgewählt: {member.name.capitalize()}")
+
+    # ------------------------------------------------------------------ #
+    # Cache-Liste füllen
+    # ------------------------------------------------------------------ #
+    def _populate_cached_pokemon(self) -> None:
+        """Listet alle vorab gecachten Pokemon mit Sprite und Typ-Info."""
+        # Treeview leeren
+        for item in self.cache_tree.get_children():
+            self.cache_tree.delete(item)
+        cache_dir = self.client.cache_dir
+        if not cache_dir.exists():
+            return
+
+        # Wir laden auch hier echte Pokemon-Objekte, damit wir Sprites
+        # und Typen anzeigen können.
+        names = sorted(
+            f.stem.removeprefix("pokemon_")
+            for f in cache_dir.glob("pokemon_*.json")
+        )
+        for name in names:
+            try:
+                data = self.client.get_pokemon(name)
+                pokemon = Pokemon.from_api(data)
+            except (PokeAPIError, ValueError):
+                continue
+            types_str = "/".join(t.capitalize() for t in pokemon.types)
+            photo = self._photo_for(pokemon, size=32)
+            kwargs = {"text": f"{pokemon.name.capitalize()}",
+                      "values": (types_str,)}
+            if photo is not None:
+                kwargs["image"] = photo
+            self.cache_tree.insert("", tk.END, iid=name, **kwargs)
+
+    def _set_status(self, msg: str) -> None:
+        self.status_var.set(msg)
+
+
+def main() -> None:
+    """Startet die GUI."""
+    root = tk.Tk()
+    PokemonTeamGUI(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
