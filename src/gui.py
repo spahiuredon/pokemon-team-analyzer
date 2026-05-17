@@ -19,6 +19,7 @@ Aufruf:
 
 from __future__ import annotations
 
+import queue
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -80,6 +81,25 @@ class PokemonTeamGUI:
         self._build_layout()
         self._refresh_team_view()
         self._populate_cached_pokemon()
+
+        # Aufräumen beim Schliessen: Photos und Tk-Variablen freigeben,
+        # bevor der Interpreter heruntergefahren wird. Das vermeidet
+        # "Tcl_AsyncDelete: async handler deleted by the wrong thread"
+        # und "main thread is not in main loop" beim Programmende.
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_close(self) -> None:
+        """Sauber herunterfahren - Photos zuerst löschen, dann Tk beenden."""
+        try:
+            self._photo_cache.clear()
+            if getattr(self, "_app_icon_photo", None) is not None:
+                self._app_icon_photo = None
+        except Exception:
+            pass
+        try:
+            self.root.quit()
+        finally:
+            self.root.destroy()
 
     # ------------------------------------------------------------------ #
     # Layout
@@ -357,15 +377,20 @@ class PokemonTeamGUI:
         self._set_status("Team geleert.")
 
     def _download_all_pokemon(self) -> None:
-        """Lädt alle Pokemon aus der PokeAPI in den Cache (mit Fortschrittsdialog).
+        """Lädt alle Pokemon-Species aus der PokeAPI in den Cache.
 
-        Der eigentliche Download läuft in einem Worker-Thread, damit die
-        GUI während des Vorgangs reagierfähig bleibt. Über `root.after`
-        werden die UI-Updates ins Haupt-Thread zurückgereicht.
+        Threading-Aufbau:
+        - Ein Worker-Thread macht die HTTP-Downloads.
+        - Der Worker schreibt Fortschritt und Endergebnis in eine
+          `queue.Queue`. Tkinter-Widgets werden NIE direkt aus dem
+          Worker angefasst (`root.after` aus Fremd-Threads ist nicht
+          thread-safe und produziert "main thread is not in main loop").
+        - Im Main-Thread läuft `_poll_queue` per `root.after` und liest
+          die Queue im Tk-Event-Loop aus - das ist sicher.
         """
         if not messagebox.askyesno(
             "Alle Pokemon laden",
-            "Lädt ca. 1300 Pokemon von der PokeAPI in den Cache.\n"
+            "Lädt etwa 1000 Pokemon-Stammformen von der PokeAPI.\n"
             "Das dauert je nach Verbindung 20-60 Sekunden.\n\n"
             "Fortfahren?",
         ):
@@ -374,7 +399,7 @@ class PokemonTeamGUI:
         # Fortschrittsdialog aufbauen.
         progress_win = tk.Toplevel(self.root)
         progress_win.title("Pokemon werden geladen ...")
-        progress_win.geometry("420x120")
+        progress_win.geometry("440x130")
         progress_win.transient(self.root)
         progress_win.grab_set()
         progress_win.protocol("WM_DELETE_WINDOW", lambda: None)
@@ -383,32 +408,30 @@ class PokemonTeamGUI:
         ttk.Label(progress_win, textvariable=info_var,
                   padding=10).pack(fill=tk.X)
         bar = ttk.Progressbar(progress_win, mode="determinate",
-                              length=380, maximum=100)
+                              length=400, maximum=100)
         bar.pack(padx=10, pady=4)
+
+        # Queue für Worker -> Main-Thread Kommunikation.
+        update_queue: queue.Queue = queue.Queue()
 
         # Lokaler Import - das fetch-Modul ist optional.
         from data.fetch_all_pokemon import bulk_fetch
 
         def _on_progress(done: int, total: int, name: str) -> None:
-            # Wird aus einem Worker-Thread aufgerufen, deshalb der Umweg
-            # über `after(0, ...)` zurück in den GUI-Thread.
-            def _update():
-                bar["maximum"] = total
-                bar["value"] = done
-                info_var.set(f"{done}/{total} - {name}")
-            self.root.after(0, _update)
+            # Wird aus einem Worker-Thread aufgerufen. `Queue.put` ist
+            # thread-safe; Tkinter-Aufrufe finden hier NICHT statt.
+            update_queue.put(("progress", done, total, name))
 
-        def _worker():
+        def _worker() -> None:
             try:
                 success, total, pruned = bulk_fetch(
                     workers=16, prune=True, progress=_on_progress,
                 )
-                self.root.after(0, lambda: _finish_ok(success, total, pruned))
+                update_queue.put(("done", success, total, pruned))
             except Exception as exc:  # pragma: no cover - GUI-Pfad
-                self.root.after(0, lambda: _finish_error(str(exc)))
+                update_queue.put(("error", str(exc)))
 
         def _finish_ok(success: int, total: int, pruned: int) -> None:
-            # Erst das Fenster zerstören und ein Status-Update setzen.
             try:
                 progress_win.grab_release()
             except tk.TclError:
@@ -418,29 +441,56 @@ class PokemonTeamGUI:
             self._set_status(
                 f"Bulk-Download fertig: {success}/{total} Pokemon{extra}."
             )
-            # Liste neu aufbauen und Info-Box - über `after` reihen wir das
-            # in die Event-Loop ein, damit der Destroy-Aufruf zuerst greift.
-            def _post():
-                self._populate_cached_pokemon()
-                pruned_msg = (
-                    f"\n{pruned} alte Mega-/Form-Einträge wurden entfernt."
-                    if pruned else ""
-                )
-                messagebox.showinfo(
-                    "Fertig",
-                    f"{success} von {total} echten Pokemon-Species im Cache."
-                    f"{pruned_msg}\n\n"
-                    "Die Auto-Vervollständigung berücksichtigt jetzt alle.",
-                )
-            self.root.after(50, _post)
+            self._populate_cached_pokemon()
+            pruned_msg = (
+                f"\n{pruned} alte Mega-/Form-Einträge wurden entfernt."
+                if pruned else ""
+            )
+            messagebox.showinfo(
+                "Fertig",
+                f"{success} von {total} echten Pokemon-Species im Cache."
+                f"{pruned_msg}\n\n"
+                "Hinweis: die PokeAPI hat aktuell nicht zwingend alle "
+                "1025 Pokemon - 'Total' ist der wahre Stand der API.",
+            )
 
         def _finish_error(message: str) -> None:
-            progress_win.grab_release()
+            try:
+                progress_win.grab_release()
+            except tk.TclError:
+                pass
             progress_win.destroy()
             messagebox.showerror("Fehler beim Download", message)
             self._set_status(f"Download-Fehler: {message}")
 
+        def _poll_queue() -> None:
+            """Pollt die Queue alle 50 ms im Main-Thread. Nur HIER werden
+            Tk-Widgets angefasst - das ist die einzige threadsichere Stelle.
+            """
+            try:
+                while True:
+                    msg = update_queue.get_nowait()
+                    kind = msg[0]
+                    if kind == "progress":
+                        _, done, total, name = msg
+                        # `maximum` wird beim ersten Update gesetzt.
+                        bar["maximum"] = total
+                        bar["value"] = done
+                        info_var.set(f"{done}/{total} - {name}")
+                    elif kind == "done":
+                        _, success, total, pruned = msg
+                        _finish_ok(success, total, pruned)
+                        return  # nicht mehr pollen
+                    elif kind == "error":
+                        _finish_error(msg[1])
+                        return
+            except queue.Empty:
+                pass
+            # Wieder einreihen.
+            self.root.after(50, _poll_queue)
+
         threading.Thread(target=_worker, daemon=True).start()
+        self.root.after(100, _poll_queue)
 
     def _auto_complete(self) -> None:
         """Füllt das aktuelle Team mit besten verfügbaren Kandidaten auf."""
