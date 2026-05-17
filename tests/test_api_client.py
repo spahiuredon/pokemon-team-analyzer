@@ -71,5 +71,36 @@ class PokeAPIClientTests(unittest.TestCase):
                 self.client.get_pokemon("ghost-pokemon")
 
 
+class PruneCacheTests(unittest.TestCase):
+    """Testet die Aufräum-Funktion in `data/fetch_all_pokemon.py`."""
+
+    def test_prune_removes_only_unknown_entries(self):
+        # Test-Cache mit einer Mischung aus erwünschten und
+        # Form-Einträgen anlegen.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from data.fetch_all_pokemon import _prune_cache  # noqa: E402
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            for name in ("pikachu", "charizard", "deoxys-attack",
+                         "venusaur-mega", "pikachu-libre"):
+                (cache / f"pokemon_{name}.json").write_text("{}")
+            # Index-Dateien dürfen NICHT entfernt werden.
+            (cache / "index_species_2000.json").write_text("{}")
+
+            valid = {"pikachu", "charizard"}
+            removed = _prune_cache(cache, valid)
+
+            self.assertEqual(removed, 3)
+            remaining = sorted(p.name for p in cache.glob("*.json"))
+            self.assertEqual(remaining, [
+                "index_species_2000.json",
+                "pokemon_charizard.json",
+                "pokemon_pikachu.json",
+            ])
+
+
 if __name__ == "__main__":
     unittest.main()

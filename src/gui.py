@@ -400,26 +400,36 @@ class PokemonTeamGUI:
 
         def _worker():
             try:
-                success, total = bulk_fetch(workers=16, progress=_on_progress)
-                self.root.after(0, lambda: _finish_ok(success, total))
+                success, total, pruned = bulk_fetch(
+                    workers=16, prune=True, progress=_on_progress,
+                )
+                self.root.after(0, lambda: _finish_ok(success, total, pruned))
             except Exception as exc:  # pragma: no cover - GUI-Pfad
                 self.root.after(0, lambda: _finish_error(str(exc)))
 
-        def _finish_ok(success: int, total: int) -> None:
+        def _finish_ok(success: int, total: int, pruned: int) -> None:
             # Erst das Fenster zerstören und ein Status-Update setzen.
             try:
                 progress_win.grab_release()
             except tk.TclError:
                 pass
             progress_win.destroy()
-            self._set_status(f"Bulk-Download fertig: {success}/{total} Pokemon.")
+            extra = f", {pruned} alte Einträge entfernt" if pruned else ""
+            self._set_status(
+                f"Bulk-Download fertig: {success}/{total} Pokemon{extra}."
+            )
             # Liste neu aufbauen und Info-Box - über `after` reihen wir das
             # in die Event-Loop ein, damit der Destroy-Aufruf zuerst greift.
             def _post():
                 self._populate_cached_pokemon()
+                pruned_msg = (
+                    f"\n{pruned} alte Mega-/Form-Einträge wurden entfernt."
+                    if pruned else ""
+                )
                 messagebox.showinfo(
                     "Fertig",
-                    f"{success} von {total} Pokemon im Cache. "
+                    f"{success} von {total} echten Pokemon-Species im Cache."
+                    f"{pruned_msg}\n\n"
                     "Die Auto-Vervollständigung berücksichtigt jetzt alle.",
                 )
             self.root.after(50, _post)

@@ -124,15 +124,17 @@ class PokeAPIClient:
         except (PokeAPIError, OSError):
             return None
 
-    def list_all_pokemon_names(self, limit: int = 1500) -> list[str]:
-        """Holt die Namen aller Pokemon, die die PokeAPI kennt.
+    def list_all_pokemon_names(self, limit: int = 2000) -> list[str]:
+        """Holt die Namen aller "echten" Pokemon (Stammformen).
 
-        Die API liefert die Liste in einer einzigen Antwort mit dem
-        passenden `limit`-Parameter; das ist deutlich schneller als
-        durch Pagination zu blättern.
+        Nutzt den Endpoint `/pokemon-species`, der genau die kanonischen
+        Pokemon listet (aktuell 1025, Stand Generation 9). Im Unterschied
+        zu `/pokemon` enthält die Antwort keine Mega-, Gigantamax-, Form-
+        oder Geschlechts-Varianten - genau das ist gewünscht, wenn das
+        gesamte Pokedex einmalig in den Cache geladen werden soll.
         """
-        endpoint = f"/pokemon?limit={int(limit)}"
-        data = self._fetch_json(endpoint, cache_name=f"index_pokemon_{limit}.json")
+        endpoint = f"/pokemon-species?limit={int(limit)}"
+        data = self._fetch_json(endpoint, cache_name=f"index_species_{limit}.json")
         results = data.get("results")
         if not isinstance(results, list):
             raise PokeAPIError("Antwort der PokeAPI hatte kein results-Feld.")
