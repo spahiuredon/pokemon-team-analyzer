@@ -40,6 +40,7 @@ from .api_client import PokeAPIClient, PokeAPIError
 from .pokemon import Pokemon
 from .presets import available_presets, load_preset
 from .team import Team
+from .team_completer import GENERATION_RANGES, TeamCompleter
 
 
 # Größe für Sprites in der Team-Übersicht und der Cache-Liste.
@@ -110,6 +111,17 @@ class PokemonTeamGUI:
             preset_combo.current(0)
         ttk.Button(left, text="Team laden (ersetzt aktuelles)",
                    command=self._load_preset).pack(fill=tk.X, pady=(4, 10))
+
+        # Auto-Vervollständigung
+        ttk.Label(left, text="Auto-Vervollständigung bis Gen:").pack(anchor=tk.W)
+        # Werte: "Alle" + Gen-Nummern
+        gen_values = ["Alle"] + [f"Gen {g}" for g in sorted(GENERATION_RANGES)]
+        self.gen_var = tk.StringVar(value="Alle")
+        gen_combo = ttk.Combobox(left, textvariable=self.gen_var,
+                                 values=gen_values, state="readonly")
+        gen_combo.pack(fill=tk.X)
+        ttk.Button(left, text="Team auto-auffüllen",
+                   command=self._auto_complete).pack(fill=tk.X, pady=(4, 10))
 
         # Cache-Liste mit Sprites: Treeview mit Bild + Name
         ttk.Label(left, text="Verfügbar (Doppelklick fügt hinzu):").pack(anchor=tk.W)
@@ -273,6 +285,48 @@ class PokemonTeamGUI:
         self._refresh_team_view()
         self._clear_output()
         self._set_status("Team geleert.")
+
+    def _auto_complete(self) -> None:
+        """Füllt das aktuelle Team mit besten verfügbaren Kandidaten auf."""
+        # 1. Pool: alle Pokemon aus dem Cache laden.
+        pool: list[Pokemon] = []
+        for cache_file in self.client.cache_dir.glob("pokemon_*.json"):
+            name = cache_file.stem.removeprefix("pokemon_")
+            try:
+                data = self.client.get_pokemon(name)
+                pool.append(Pokemon.from_api(data))
+            except (PokeAPIError, ValueError):
+                continue  # defekte Cache-Datei einfach ignorieren
+        if not pool:
+            messagebox.showinfo(
+                "Hinweis",
+                "Kein Pokemon im Cache. Bitte zuerst ein paar hinzufügen.")
+            return
+
+        # 2. Generations-Filter umwandeln (Anzeige -> Zahl oder None).
+        gen_label = self.gen_var.get()
+        max_gen: int | None
+        if gen_label == "Alle":
+            max_gen = None
+        else:
+            try:
+                max_gen = int(gen_label.removeprefix("Gen ").strip())
+            except ValueError:
+                max_gen = None
+
+        # 3. Greedy-Vervollständigung anwenden.
+        try:
+            completer = TeamCompleter(pool)
+            completer.complete(self.team, max_generation=max_gen)
+        except (ValueError, KeyError) as exc:
+            messagebox.showerror("Fehler beim Auffüllen", str(exc))
+            return
+
+        self._refresh_team_view()
+        gen_msg = "alle Generationen" if max_gen is None else f"bis Gen {max_gen}"
+        self._set_status(
+            f"Team auto-vervollständigt ({gen_msg}, Pool: {len(pool)} Pokemon)."
+        )
 
     def _load_preset(self) -> None:
         """Lädt das im Dropdown ausgewählte Preset und ersetzt das aktuelle Team."""

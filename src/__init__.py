@@ -14,6 +14,7 @@ from .team import Team
 from .api_client import PokeAPIClient
 from .analyzer import TeamAnalyzer
 from .presets import PRESET_TEAMS, available_presets, load_preset
+from .team_completer import GENERATION_RANGES, TeamCompleter, generation_of
 
 __all__ = [
     "Pokemon",
@@ -25,4 +26,7 @@ __all__ = [
     "PRESET_TEAMS",
     "available_presets",
     "load_preset",
+    "TeamCompleter",
+    "generation_of",
+    "GENERATION_RANGES",
 ]
