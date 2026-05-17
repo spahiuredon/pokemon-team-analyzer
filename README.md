@@ -1,6 +1,6 @@
 # Pokémon Team-Analyzer
 
-**INFPROG2 FS26 - Semesterprojekt**
+**PROG2 FS26 - Semesterprojekt**
 Autor: Redon
 
 ## Projektbeschreibung
@@ -58,7 +58,7 @@ drei Diagramme.
 python -m unittest discover -s tests -v
 ```
 
-Erwartete Ausgabe: `Ran 21 tests in 0.00Xs - OK`.
+Erwartete Ausgabe: `Ran 25 tests in 0.00Xs - OK`.
 
 ### Cache vorbefüllen (optional, hilfreich bei schlechtem Netz)
 
