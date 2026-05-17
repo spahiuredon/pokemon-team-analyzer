@@ -58,7 +58,7 @@ drei Diagramme.
 python -m unittest discover -s tests -v
 ```
 
-Erwartete Ausgabe: `Ran 25 tests in 0.00Xs - OK`.
+Erwartete Ausgabe: `Ran 35 tests in 0.00Xs - OK`.
 
 ### Cache vorbefüllen (optional, hilfreich bei schlechtem Netz)
 
@@ -78,7 +78,7 @@ python data/seed_cache.py
 | `src/gui.py`           | `PokemonTeamGUI` - einfaches Tkinter-Fenster zum Zusammenstellen des Teams und zum Anzeigen aller Analysen + Plots. |
 | `src/presets.py`       | Vorgefertigte Champion-Teams aus den Hauptspielen (Gen 1 Klassiker, Gen 1 Blue, Gen 3 Steven, Gen 4 Cynthia). |
 | `src/team_completer.py`| `TeamCompleter` - Greedy-Algorithmus, der ein partielles Team auf 6 Pokemon auffüllt. Berücksichtigt Total-Stats, Typ-Coverage (deckt Schwächen ab) und Typ-Diversität. Mit optionalem Generations-Filter (Gen 1-9). |
-| `tests/`               | 21 Unit-Tests, decken jede Klasse ab. Der API-Client wird mit `unittest.mock` getestet, damit keine echten Netzwerk-Aufrufe nötig sind. |
+| `tests/`               | 35 Unit-Tests, decken jede Klasse ab. Der API-Client wird mit `unittest.mock` getestet, damit keine echten Netzwerk-Aufrufe nötig sind. |
 | `notebooks/demo.ipynb` | Demo, die alle Kompetenzen sichtbar macht. |
 | `data/seed_cache.py`   | Optional: legt bekannte Pokemon im Cache an, damit die Demo auch ohne Internet funktioniert. |
 
