@@ -5,7 +5,7 @@ hübsch aussehen.
 Wozu?
 - Damit Demos und Tests auch ohne Internet funktionieren.
 - Die Daten entsprechen exakt dem Format, das die PokeAPI liefert
-  (gekürzt auf die Felder, die wir tatsächlich auslesen).
+  (gekürzt auf die Felder, die das Projekt tatsächlich auswertet).
 
 Das Skript muss nur einmal ausgeführt werden:
     python data/seed_cache.py
@@ -243,7 +243,7 @@ def make_placeholder_sprite(pokemon: dict, out_path: Path, size: int = 96) -> No
     - Pokemon-Initiale gross in der Mitte
     """
     if not HAS_PIL:
-        return  # ohne Pillow überspringen wir das einfach
+        return  # ohne Pillow wird der Schritt einfach übersprungen
 
     primary = pokemon["types"][0]
     secondary = pokemon["types"][1] if len(pokemon["types"]) > 1 else primary

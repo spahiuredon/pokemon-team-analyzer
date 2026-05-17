@@ -19,6 +19,7 @@ Aufruf:
 
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -59,11 +60,14 @@ class PokemonTeamGUI:
         project_root = Path(__file__).resolve().parent.parent
         self.client = PokeAPIClient(cache_dir=project_root / "data" / "cache",
                                     sprite_dir=project_root / "data" / "sprites")
+
+        # App-Icon (Pokeball) für Fenster und Dock setzen.
+        self._set_app_icon(project_root / "data" / "app_icon.png")
         self.team = Team("Mein Team")
         # Aktuell im rechten Bereich angezeigte matplotlib-Figur
         self._current_canvas: FigureCanvasTkAgg | None = None
         # Bilder dürfen NICHT vom Garbage Collector eingesammelt werden, sonst
-        # zeigt Tk nur leere Felder. Wir halten Referenzen in diesem Dict.
+        # zeigt Tk nur leere Felder. Referenzen werden in diesem Dict gehalten.
         self._photo_cache: dict[int, ImageTk.PhotoImage] = {}
 
         # ttk-Stil aufhübschen
@@ -121,10 +125,22 @@ class PokemonTeamGUI:
                                  values=gen_values, state="readonly")
         gen_combo.pack(fill=tk.X)
         ttk.Button(left, text="Team auto-auffüllen",
-                   command=self._auto_complete).pack(fill=tk.X, pady=(4, 10))
+                   command=self._auto_complete).pack(fill=tk.X, pady=(4, 4))
+        ttk.Button(left, text="Alle Pokemon laden (PokeAPI)",
+                   command=self._download_all_pokemon).pack(fill=tk.X, pady=(0, 10))
 
         # Cache-Liste mit Sprites: Treeview mit Bild + Name
         ttk.Label(left, text="Verfügbar (Doppelklick fügt hinzu):").pack(anchor=tk.W)
+        # Suchfeld - filtert die Cache-Liste live nach Namen.
+        self.cache_search_var = tk.StringVar()
+        search_entry = ttk.Entry(left, textvariable=self.cache_search_var)
+        search_entry.pack(fill=tk.X)
+        # `trace_add("write", ...)` ruft die Filter-Funktion bei jedem Tastendruck.
+        self.cache_search_var.trace_add("write", lambda *_: self._refresh_cache_view())
+        # Hinweistext mit Trefferanzahl
+        self.cache_info_var = tk.StringVar(value="")
+        ttk.Label(left, textvariable=self.cache_info_var,
+                  foreground="#666666").pack(anchor=tk.W)
         cache_frame = ttk.Frame(left)
         cache_frame.pack(fill=tk.BOTH, expand=False)
         self.cache_tree = ttk.Treeview(cache_frame, columns=("types",),
@@ -202,14 +218,65 @@ class PokemonTeamGUI:
                   relief=tk.SUNKEN, anchor=tk.W).pack(side=tk.BOTTOM, fill=tk.X)
 
     # ------------------------------------------------------------------ #
+    # App-Icon und Dock-Name
+    # ------------------------------------------------------------------ #
+    def _set_app_icon(self, icon_path: Path) -> None:
+        """Setzt das Fenster-Icon (Pokeball) und versucht den Dock-Namen
+        auf macOS auf den lesbaren Titel zu ändern.
+
+        Fehler werden bewusst geschluckt, damit fehlende Bibliotheken
+        oder ungewöhnliche Window-Manager das GUI nicht blockieren.
+        """
+        # 1) Fenster-Icon via Tk PhotoImage.
+        if HAS_PIL and icon_path.exists():
+            try:
+                img = Image.open(icon_path).convert("RGBA")
+                self._app_icon_photo = ImageTk.PhotoImage(img)
+                # `True` heisst: gilt auch für neu geöffnete Toplevels.
+                self.root.iconphoto(True, self._app_icon_photo)
+            except (OSError, ValueError):
+                pass
+
+        # 2) macOS-Dock: Name auf "Pokemon Team-Analyzer" setzen.
+        # Funktioniert nur, wenn `pyobjc` (Foundation) installiert ist.
+        # Ohne pyobjc bleibt der Dock-Eintrag bei "python3.x" - das ist
+        # Apple's Standardverhalten für Skripte ohne .app-Bundle.
+        import sys as _sys
+        if _sys.platform == "darwin":
+            try:
+                from Foundation import NSBundle  # type: ignore
+                bundle = NSBundle.mainBundle()
+                if bundle is not None:
+                    info = (
+                        bundle.localizedInfoDictionary()
+                        or bundle.infoDictionary()
+                    )
+                    if info is not None:
+                        info["CFBundleName"] = "Pokemon Team-Analyzer"
+                        info["CFBundleDisplayName"] = "Pokemon Team-Analyzer"
+            except ImportError:
+                # pyobjc nicht installiert -> Dock-Name bleibt "python3.x".
+                # Das Fenster-Icon und der Title-Bar zeigen aber den richtigen Namen.
+                pass
+
+    # ------------------------------------------------------------------ #
     # Sprite-Helfer
     # ------------------------------------------------------------------ #
-    def _photo_for(self, pokemon: Pokemon, size: int = SPRITE_SIZE) -> tk.PhotoImage | None:
+    def _photo_for(
+        self,
+        pokemon: Pokemon,
+        size: int = SPRITE_SIZE,
+        allow_download: bool = True,
+    ) -> tk.PhotoImage | None:
         """Liefert ein Tk-PhotoImage für ein Pokemon, oder None bei Fehler.
 
-        Wir cachen die fertigen Bilder im Dictionary, damit:
-        1. das Resizen pro Pokemon nur einmal stattfindet
-        2. der Garbage Collector sie nicht einsammelt (Tk-Falle!)
+        Fertige Bilder werden im Dictionary gecached, damit
+        1. das Resizen pro Pokemon nur einmal stattfindet und
+        2. der Garbage Collector sie nicht einsammelt (Tk-Falle).
+
+        Mit `allow_download=False` werden nur bereits lokal vorhandene
+        Sprites genutzt - keine HTTP-Aufrufe. Das ist wichtig für die
+        Cache-Liste, die viele Pokemon auf einmal rendert.
         """
         if not HAS_PIL:
             return None
@@ -217,7 +284,10 @@ class PokemonTeamGUI:
         if key in self._photo_cache:
             return self._photo_cache[key]
 
-        sprite_path = self.client.get_sprite(pokemon.pokedex_id, pokemon.sprite_url)
+        sprite_path = self.client.get_sprite(
+            pokemon.pokedex_id, pokemon.sprite_url,
+            allow_download=allow_download,
+        )
         if sprite_path is None:
             return None
         try:
@@ -244,7 +314,7 @@ class PokemonTeamGUI:
         selection = self.cache_tree.selection()
         if not selection:
             return
-        # Wir haben den Namen als iid gesetzt
+        # Der Name wurde beim Einfügen als iid gesetzt.
         name = selection[0]
         self._add_by_name(name)
 
@@ -254,7 +324,7 @@ class PokemonTeamGUI:
             pokemon = Pokemon.from_api(data)
             self.team.add(pokemon)
         except (PokeAPIError, ValueError) as exc:
-            # V06 - Fehler abfangen und freundlich anzeigen, nicht crashen.
+            # Fehler abfangen und freundlich anzeigen statt zu crashen.
             messagebox.showerror("Fehler", f"{exc}")
             self._set_status(f"Fehler: {exc}")
             return
@@ -285,6 +355,82 @@ class PokemonTeamGUI:
         self._refresh_team_view()
         self._clear_output()
         self._set_status("Team geleert.")
+
+    def _download_all_pokemon(self) -> None:
+        """Lädt alle Pokemon aus der PokeAPI in den Cache (mit Fortschrittsdialog).
+
+        Der eigentliche Download läuft in einem Worker-Thread, damit die
+        GUI während des Vorgangs reagierfähig bleibt. Über `root.after`
+        werden die UI-Updates ins Haupt-Thread zurückgereicht.
+        """
+        if not messagebox.askyesno(
+            "Alle Pokemon laden",
+            "Lädt ca. 1300 Pokemon von der PokeAPI in den Cache.\n"
+            "Das dauert je nach Verbindung 20-60 Sekunden.\n\n"
+            "Fortfahren?",
+        ):
+            return
+
+        # Fortschrittsdialog aufbauen.
+        progress_win = tk.Toplevel(self.root)
+        progress_win.title("Pokemon werden geladen ...")
+        progress_win.geometry("420x120")
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+        progress_win.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        info_var = tk.StringVar(value="Hole Pokemon-Liste ...")
+        ttk.Label(progress_win, textvariable=info_var,
+                  padding=10).pack(fill=tk.X)
+        bar = ttk.Progressbar(progress_win, mode="determinate",
+                              length=380, maximum=100)
+        bar.pack(padx=10, pady=4)
+
+        # Lokaler Import - das fetch-Modul ist optional.
+        from data.fetch_all_pokemon import bulk_fetch
+
+        def _on_progress(done: int, total: int, name: str) -> None:
+            # Wird aus einem Worker-Thread aufgerufen, deshalb der Umweg
+            # über `after(0, ...)` zurück in den GUI-Thread.
+            def _update():
+                bar["maximum"] = total
+                bar["value"] = done
+                info_var.set(f"{done}/{total} - {name}")
+            self.root.after(0, _update)
+
+        def _worker():
+            try:
+                success, total = bulk_fetch(workers=16, progress=_on_progress)
+                self.root.after(0, lambda: _finish_ok(success, total))
+            except Exception as exc:  # pragma: no cover - GUI-Pfad
+                self.root.after(0, lambda: _finish_error(str(exc)))
+
+        def _finish_ok(success: int, total: int) -> None:
+            # Erst das Fenster zerstören und ein Status-Update setzen.
+            try:
+                progress_win.grab_release()
+            except tk.TclError:
+                pass
+            progress_win.destroy()
+            self._set_status(f"Bulk-Download fertig: {success}/{total} Pokemon.")
+            # Liste neu aufbauen und Info-Box - über `after` reihen wir das
+            # in die Event-Loop ein, damit der Destroy-Aufruf zuerst greift.
+            def _post():
+                self._populate_cached_pokemon()
+                messagebox.showinfo(
+                    "Fertig",
+                    f"{success} von {total} Pokemon im Cache. "
+                    "Die Auto-Vervollständigung berücksichtigt jetzt alle.",
+                )
+            self.root.after(50, _post)
+
+        def _finish_error(message: str) -> None:
+            progress_win.grab_release()
+            progress_win.destroy()
+            messagebox.showerror("Fehler beim Download", message)
+            self._set_status(f"Download-Fehler: {message}")
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _auto_complete(self) -> None:
         """Füllt das aktuelle Team mit besten verfügbaren Kandidaten auf."""
@@ -492,34 +638,75 @@ class PokemonTeamGUI:
     # ------------------------------------------------------------------ #
     # Cache-Liste füllen
     # ------------------------------------------------------------------ #
+    # Liste der bekannten Cache-Namen wird einmal eingelesen und dann nur
+    # noch in `_refresh_cache_view` gefiltert. So bleibt die Suche flüssig
+    # auch bei 1300+ Pokemon im Cache.
+    CACHE_DISPLAY_LIMIT = 80
+
     def _populate_cached_pokemon(self) -> None:
-        """Listet alle vorab gecachten Pokemon mit Sprite und Typ-Info."""
-        # Treeview leeren
-        for item in self.cache_tree.get_children():
-            self.cache_tree.delete(item)
+        """Liest die Liste der Pokemon-Namen aus dem Cache (sehr günstig:
+        nur Dateinamen, keine JSON-Parsen, keine Netz-Aufrufe).
+        Die eigentliche Anzeige passiert in `_refresh_cache_view`.
+        """
         cache_dir = self.client.cache_dir
         if not cache_dir.exists():
-            return
+            self._cached_names: list[str] = []
+        else:
+            self._cached_names = sorted(
+                f.stem.removeprefix("pokemon_")
+                for f in cache_dir.glob("pokemon_*.json")
+            )
+        self._refresh_cache_view()
 
-        # Wir laden auch hier echte Pokemon-Objekte, damit wir Sprites
-        # und Typen anzeigen können.
-        names = sorted(
-            f.stem.removeprefix("pokemon_")
-            for f in cache_dir.glob("pokemon_*.json")
-        )
-        for name in names:
+    def _refresh_cache_view(self) -> None:
+        """Zeigt die Pokemon-Namen, die zum Suchfilter passen, in der Treeview.
+
+        - Standardansicht (kein Suchtext): die ersten `CACHE_DISPLAY_LIMIT`
+          Einträge, alphabetisch. Das hält die GUI flott bei grossen Caches.
+        - Mit Suchtext wird nach Substring gefiltert; die Liste bleibt
+          ebenfalls auf das Limit beschränkt.
+        - Sprites werden nur angezeigt, wenn sie bereits lokal vorhanden
+          sind (`allow_download=False`), sonst nur Name und Typen.
+        """
+        # Treeview leeren.
+        for item in self.cache_tree.get_children():
+            self.cache_tree.delete(item)
+
+        query = self.cache_search_var.get().strip().lower()
+        names_all = getattr(self, "_cached_names", [])
+        if query:
+            matches = [n for n in names_all if query in n]
+        else:
+            matches = list(names_all)
+        total_matches = len(matches)
+        shown = matches[: self.CACHE_DISPLAY_LIMIT]
+
+        for name in shown:
+            # JSON-Parse ist günstig (~1ms pro Pokemon), aber nur für die
+            # tatsächlich gezeigten Einträge - nicht für alle 1300+.
             try:
                 data = self.client.get_pokemon(name)
                 pokemon = Pokemon.from_api(data)
             except (PokeAPIError, ValueError):
                 continue
             types_str = "/".join(t.capitalize() for t in pokemon.types)
-            photo = self._photo_for(pokemon, size=32)
+            photo = self._photo_for(pokemon, size=32, allow_download=False)
             kwargs = {"text": f"{pokemon.name.capitalize()}",
                       "values": (types_str,)}
             if photo is not None:
                 kwargs["image"] = photo
             self.cache_tree.insert("", tk.END, iid=name, **kwargs)
+
+        # Info-Zeile mit Anzahl Treffer und ggf. Limit-Hinweis aktualisieren.
+        if total_matches == 0:
+            self.cache_info_var.set("Keine Treffer.")
+        elif total_matches > self.CACHE_DISPLAY_LIMIT:
+            self.cache_info_var.set(
+                f"{self.CACHE_DISPLAY_LIMIT} von {total_matches} angezeigt - "
+                "Suche eingrenzen für mehr."
+            )
+        else:
+            self.cache_info_var.set(f"{total_matches} im Cache.")
 
     def _set_status(self, msg: str) -> None:
         self.status_var.set(msg)

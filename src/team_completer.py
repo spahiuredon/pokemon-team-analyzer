@@ -1,21 +1,24 @@
 """Auto-Vervollständigung für Pokemon-Teams.
 
-Idee: Der Nutzer hat 1-2 Lieblings-Pokemon im Team. Wir füllen den
-Rest mit Kandidaten aus einem Pool auf, sodass das Team in den Stats
-und vor allem in der Typ-Abdeckung möglichst ausgewogen ist.
+Ausgangslage: das Team enthält bereits einige Lieblings-Pokemon. Der
+Completer füllt es greedy auf bis zu 6 Mitglieder auf, sodass die
+Typ-Abdeckung des Gesamtteams möglichst stabil und die durchschnittlichen
+Base-Stats möglichst hoch sind.
 
-Algorithmus (Greedy, V11-V13):
-1. Für jeden Kandidaten berechnen wir einen Score (siehe `score()`).
-2. Wir wählen den Kandidaten mit dem höchsten Score, fügen ihn ins Team.
-3. Wiederholen, bis das Team voll ist (max. 6) oder keine Kandidaten mehr.
+Algorithmus:
+1. Für jeden Kandidaten wird ein Score berechnet (siehe `score()`).
+2. Der Kandidat mit dem höchsten Score wird ins Team aufgenommen.
+3. Schritt 1 und 2 werden wiederholt, bis das Team voll ist oder
+   keine Kandidaten mehr im Pool sind.
 
 Komplexität:
 - pro Iteration: O(|pool| * (|team| + 18 Typen))
-- gesamt: O(6 * |pool| * (6 + 18)) = O(|pool|)  bei festem Maximum 6
-Das ist linear in der Pool-Grösse - keine versteckten quadratischen Pfade.
+- gesamt: O(6 * |pool| * (6 + 18)) = O(|pool|) bei festem Maximum 6
+Das ist linear in der Pool-Grösse, ohne versteckte quadratische Pfade.
 
 Limitierung:
-- Optionaler max_generation-Filter (1-9). Kandidaten ausserhalb fliegen raus.
+- Optionaler `max_generation`-Filter (1-9). Kandidaten ausserhalb des
+  gewünschten Bereichs werden vor der Auswahl entfernt.
 """
 
 from __future__ import annotations

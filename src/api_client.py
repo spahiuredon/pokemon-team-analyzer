@@ -1,14 +1,14 @@
 """PokeAPI Client.
 
 Holt Pokemon-Daten von https://pokeapi.co/.
-Verwendet `urllib` aus der Standardbibliothek (V05 - Working with Files and Internet Data).
+Verwendet `urllib` aus der Standardbibliothek.
 
-Robustheit (V06):
+Robustheit:
 - Retries mit exponentiellem Backoff bei Netzwerkfehlern
 - Timeout pro Anfrage
 - Validierung der API-Antwort (JSON-Struktur)
-- Lokales Caching im JSON-Format, damit wir nicht jedes Mal die API hämmern
-  (gut für Tests und für den Praktikumsbetrieb mit langsamem Internet)
+- Lokales Caching im JSON-Format, sodass die API nicht bei jedem Aufruf
+  erneut kontaktiert wird (praktisch für Tests und langsame Verbindungen).
 """
 
 from __future__ import annotations
@@ -91,6 +91,7 @@ class PokeAPIClient:
         self,
         pokemon_id: int,
         sprite_url: str | None = None,
+        allow_download: bool = True,
     ) -> Path | None:
         """Lädt das offizielle Pokemon-Sprite (96x96 PNG) und speichert es lokal.
 
@@ -98,13 +99,19 @@ class PokeAPIClient:
         1. Cache auf der Platte (sprites/{id}.png)
         2. Über das Internet von der angegebenen URL (oder dem PokeAPI-Default)
 
+        Mit `allow_download=False` wird Schritt 2 übersprungen - praktisch
+        beim Aufbau der GUI, wenn der Cache schnell durchgegangen werden
+        muss und Netz-Zugriff vermieden werden soll.
+
         Gibt den Pfad zum Sprite zurück, oder None, falls beides fehlschlägt.
-        Wirft keine Exception - die GUI darf einfach ein Platzhalter zeigen,
-        wenn nichts geladen werden kann (V06 - Robustheit).
+        Wirft keine Exception, sodass Aufrufer einfach einen Platzhalter
+        anzeigen können.
         """
         sprite_path = self.sprite_dir / f"{pokemon_id}.png"
         if sprite_path.exists():
             return sprite_path
+        if not allow_download:
+            return None
         if sprite_url is None:
             sprite_url = (
                 "https://raw.githubusercontent.com/PokeAPI/sprites/"
@@ -116,6 +123,25 @@ class PokeAPIClient:
             return sprite_path
         except (PokeAPIError, OSError):
             return None
+
+    def list_all_pokemon_names(self, limit: int = 1500) -> list[str]:
+        """Holt die Namen aller Pokemon, die die PokeAPI kennt.
+
+        Die API liefert die Liste in einer einzigen Antwort mit dem
+        passenden `limit`-Parameter; das ist deutlich schneller als
+        durch Pagination zu blättern.
+        """
+        endpoint = f"/pokemon?limit={int(limit)}"
+        data = self._fetch_json(endpoint, cache_name=f"index_pokemon_{limit}.json")
+        results = data.get("results")
+        if not isinstance(results, list):
+            raise PokeAPIError("Antwort der PokeAPI hatte kein results-Feld.")
+        names: list[str] = []
+        for entry in results:
+            name = entry.get("name") if isinstance(entry, dict) else None
+            if isinstance(name, str) and name:
+                names.append(name)
+        return names
 
     def get_type(self, type_name: str) -> dict[str, Any]:
         """Lädt Typ-Daten (Schwächen, Resistenzen).
@@ -156,7 +182,7 @@ class PokeAPIClient:
         return data
 
     def _http_get_with_retries(self, url: str) -> bytes:
-        """HTTP GET mit Retries und exponentiellem Backoff (V06 - Robustheit)."""
+        """HTTP GET mit Retries und exponentiellem Backoff."""
         last_error: Exception | None = None
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:

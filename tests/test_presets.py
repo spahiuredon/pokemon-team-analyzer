@@ -38,7 +38,7 @@ class PresetsTests(unittest.TestCase):
                                  f"{name} sollte 6 Pokemon haben")
 
     def test_load_preset_returns_team_with_correct_size(self):
-        # Wir nehmen das erste Preset und prüfen, ob es korrekt geladen wird.
+        # Das erste Preset stellvertretend prüfen.
         any_preset = next(iter(PRESET_TEAMS.keys()))
         team = load_preset(any_preset, self.client)
         self.assertEqual(len(team), 6)

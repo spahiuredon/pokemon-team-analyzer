@@ -1,14 +1,9 @@
 """Pokemon-Klassen.
 
-- Konstruktor (__init__)
-- Kapselung (private Attribute mit Validierung)
-- Vererbung: MegaPokemon erbt von Pokemon und überschreibt total_stats()
-- Spezielle Methoden: __repr__, __eq__
-
-Die Pokemon-Klasse trennt die "rohen" API-Daten vom Domänenmodell:
-Wir nehmen das große Dict von der PokeAPI und ziehen die wichtigen
-Felder heraus, damit der Rest der App damit arbeiten kann ohne das
-ganze JSON-Format kennen zu müssen.
+Enthält die Basisklasse `Pokemon` und die abgeleitete Klasse
+`MegaPokemon`, die `total_stats()` überschreibt. Die `from_api`-Factory
+verwandelt das rohe PokeAPI-Dict in ein schlankes Domänenobjekt, sodass
+der Rest der Anwendung das volle JSON-Format nicht kennen muss.
 """
 
 from __future__ import annotations
@@ -30,7 +25,7 @@ class Pokemon:
         stats: dict[str, int],
         sprite_url: str | None = None,
     ) -> None:
-        # Validierung im Konstruktor (V06 - Robustness)
+        # Validierung im Konstruktor
         if not name or not isinstance(name, str):
             raise ValueError("Pokemon-Name muss ein nicht-leerer String sein.")
         if not isinstance(pokedex_id, int) or pokedex_id <= 0:
@@ -48,7 +43,7 @@ class Pokemon:
 
         self._name = name.lower()
         self._pokedex_id = pokedex_id
-        # Wir kopieren die Listen/Dicts, damit Aufrufer sie nicht versehentlich mutieren.
+        # Listen und Dicts werden kopiert, damit Aufrufer sie nicht versehentlich mutieren.
         self._types = tuple(t.lower() for t in types)
         self._stats = dict(stats)
         self._sprite_url = sprite_url
@@ -89,7 +84,7 @@ class Pokemon:
     def from_api(cls, data: dict[str, Any]) -> "Pokemon":
         """Erstellt ein Pokemon aus dem Rohdaten-Dict der PokeAPI.
 
-        Beispiel-Struktur, die wir erwarten:
+        Erwartete Struktur:
             {
               "name": "pikachu",
               "id": 25,
@@ -106,7 +101,7 @@ class Pokemon:
                 for entry in data["stats"]
             }
             # Das sprite-Feld ist optional - die PokeAPI liefert es bei allen
-            # echten Pokemon, aber wir geben uns mit None zufrieden, falls nicht.
+            # echten Pokemon, ein fehlender Eintrag bleibt einfach `None`.
             sprite_url = None
             sprites = data.get("sprites")
             if isinstance(sprites, dict):
@@ -133,10 +128,9 @@ class Pokemon:
 class MegaPokemon(Pokemon):
     """Eine Mega-Entwicklung eines Pokemon.
 
-    Demonstriert Vererbung (V03):
-    - Erbt alle Attribute & Methoden von Pokemon
-    - Erweitert um einen Stats-Boost
-    - Überschreibt total_stats(): zählt den Mega-Bonus mit
+    Erbt alle Attribute und Methoden von `Pokemon`, ergänzt ein
+    Feld für die Basisform und überschreibt `total_stats()` mit einem
+    pauschalen Mega-Bonus.
     """
 
     MEGA_STAT_BOOST = 100  # Pauschal +100 auf die Summe (Schätzwert im Sinne der Aufgabe)
