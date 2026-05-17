@@ -95,3 +95,9 @@ Die Hauptanalyse (`type_coverage`) iteriert einmal über alle
 Teammitglieder ($n \le 6$) und einmal über die 18 Typen
 (Konstante). Damit ist die Laufzeit $\mathcal{O}(n)$ - keine
 versteckten quadratischen Schleifen.
+
+## Nächste Schritte
+
+Als nächstes werden Funktionen wie ROM-Sync implementiert um ein save file
+zwischen einem gemoddeten 3DS und einem Emulator synchronisieren zu können. Ausserdem
+sollte das GUI noch verbessert werden und die gesamte Anwendung zu einem .app gebündelt werden.
