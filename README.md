@@ -1,7 +1,7 @@
 # Pokémon Team-Analyzer
 
 **INFPROG2 FS26 - Semesterprojekt**
-Autor: Redon (Solo)
+Autor: Redon
 
 ## Projektbeschreibung
 
@@ -12,16 +12,6 @@ Schwächen des Teams mit Pandas und matplotlib. Insbesondere
 berechnet er die Typ-Coverage (welche Angriffstypen sind für das
 Team gefährlich) und visualisiert die Base-Stats der
 Teammitglieder.
-
-## Erfüllung der Anforderungen aus dem Project Guide
-
-| Kompetenz                              | Wo im Projekt                                              |
-|----------------------------------------|------------------------------------------------------------|
-| OOP (V02-V04), Vererbung               | `src/pokemon.py` (`Pokemon` -> `MegaPokemon`), `src/team.py`, `src/type_chart.py`, `src/analyzer.py`, `src/api_client.py` |
-| Internet-Daten (V05)                   | `src/api_client.py` benutzt `urllib.request` für die PokeAPI |
-| Robustheit und Validierung (V06)       | Retries + Timeouts im Client, Konstruktor-Validierung in allen Klassen |
-| Pandas + Visualisierung (V07-V09)      | `src/analyzer.py` (DataFrames, `agg`, matplotlib-Plots) |
-| Tests + Komplexität (V10-V13)          | `tests/` (21 Tests), Analyzer ist O(n) |
 
 ## Installation
 
@@ -52,7 +42,7 @@ rechts Tabs für Tabellen und eingebettete matplotlib-Plots
 macOS und Windows von Haus aus, unter Linux mit
 `apt install python3-tk`).
 
-### Demo-Notebook (für die Präsentation der einzelnen Schritte)
+### Demo-Notebook
 
 ```bash
 jupyter notebook notebooks/demo.ipynb
