@@ -39,6 +39,7 @@ from .pokemon import Pokemon
 from .presets import available_presets, load_preset
 from .team import Team
 from .team_completer import GENERATION_RANGES, TeamCompleter
+from .translations import display_name, matches_query, to_english
 
 SPRITE_SIZE = 64
 
@@ -124,7 +125,7 @@ class PokemonTeamGUI:
         # Suche + direkte Eingabe
         self.search_var = tk.StringVar()
         search = ctk.CTkEntry(sidebar, textvariable=self.search_var,
-                              placeholder_text="Suchen oder Name eingeben...")
+                              placeholder_text="Suchen (deutsch/englisch)...")
         search.grid(row=1, column=0, sticky="ew", padx=16)
         search.bind("<Return>", lambda _e: self._add_pokemon())
         self.search_var.trace_add("write", lambda *_: self._refresh_cache_view())
@@ -163,7 +164,12 @@ class PokemonTeamGUI:
         ctk.CTkLabel(bottom, text="Auto-Vervollständigung",
                      font=ctk.CTkFont(size=12, weight="bold")).grid(
             row=3, column=0, sticky="w")
-        gen_values = ["Alle"] + [f"Gen {g}" for g in sorted(GENERATION_RANGES)]
+        # "Bis Gen n" = alles bis einschliesslich Gen n;
+        # "Nur Gen n" = ausschliesslich Pokemon dieser Generation
+        # (z.B. ein reines Gen-5-Team passend zu Schwarz/Weiss).
+        gens = sorted(GENERATION_RANGES)
+        gen_values = (["Alle"] + [f"Bis Gen {g}" for g in gens]
+                      + [f"Nur Gen {g}" for g in gens])
         self.gen_var = tk.StringVar(value="Alle")
         ctk.CTkOptionMenu(bottom, variable=self.gen_var,
                           values=gen_values).grid(
@@ -331,7 +337,8 @@ class PokemonTeamGUI:
             child.destroy()
 
         query = self.search_var.get().strip().lower()
-        matches = ([n for n in self._cached_names if query in n]
+        # Suche matcht englische UND deutsche Namen ("Glurak" -> charizard).
+        matches = ([n for n in self._cached_names if matches_query(n, query)]
                    if query else list(self._cached_names))
         total = len(matches)
         shown = matches[: self.CACHE_DISPLAY_LIMIT]
@@ -351,7 +358,7 @@ class PokemonTeamGUI:
                     row=0, column=0, padx=(2, 6))
             types = "/".join(GERMAN_TYPES.get(t, t.capitalize())
                              for t in pokemon.types)
-            ctk.CTkLabel(item, text=f"{pokemon.name.capitalize()}",
+            ctk.CTkLabel(item, text=display_name(pokemon.name),
                          anchor="w").grid(row=0, column=1, sticky="w")
             ctk.CTkLabel(item, text=types, anchor="e",
                          font=ctk.CTkFont(size=10),
@@ -381,7 +388,9 @@ class PokemonTeamGUI:
 
     def _add_by_name(self, name: str) -> bool:
         try:
-            pokemon = Pokemon.from_api(self.client.get_pokemon(name))
+            # Deutsche Namen ("Glurak") werden zu englischen übersetzt,
+            # bevor Cache/API gefragt werden.
+            pokemon = Pokemon.from_api(self.client.get_pokemon(to_english(name)))
             self.team.add(pokemon)
         except (PokeAPIError, ValueError) as exc:
             messagebox.showerror("Fehler", f"{exc}")
@@ -389,7 +398,7 @@ class PokemonTeamGUI:
             return False
         self._refresh_team_view()
         self._refresh_analysis()
-        self._set_status(f"{pokemon.name.capitalize()} hinzugefügt.")
+        self._set_status(f"{display_name(pokemon.name)} hinzugefügt.")
         return True
 
     def _remove_member(self, name: str) -> None:
@@ -400,7 +409,7 @@ class PokemonTeamGUI:
             return
         self._refresh_team_view()
         self._refresh_analysis()
-        self._set_status(f"{name.capitalize()} entfernt.")
+        self._set_status(f"{display_name(name)} entfernt.")
 
     def _clear_team(self) -> None:
         self.team = Team(self.team.name)
@@ -440,11 +449,16 @@ class PokemonTeamGUI:
             messagebox.showinfo("Hinweis", "Kein Pokemon im Cache.")
             return
         gen_label = self.gen_var.get()
-        max_gen = (None if gen_label == "Alle"
-                   else int(gen_label.removeprefix("Gen ").strip()))
+        max_gen: int | None = None
+        exact_gen: int | None = None
+        if gen_label.startswith("Bis Gen "):
+            max_gen = int(gen_label.removeprefix("Bis Gen ").strip())
+        elif gen_label.startswith("Nur Gen "):
+            exact_gen = int(gen_label.removeprefix("Nur Gen ").strip())
         try:
             TeamCompleter(pool).complete(
                 self.team, max_generation=max_gen,
+                exact_generation=exact_gen,
                 allow_legendary=self.legendary_var.get())
         except (ValueError, KeyError) as exc:
             messagebox.showerror("Fehler beim Auffüllen", str(exc))
@@ -480,7 +494,7 @@ class PokemonTeamGUI:
                     row=0, column=0, rowspan=3, padx=10, pady=8)
 
             ctk.CTkLabel(
-                card, text=f"{pokemon.name.capitalize()}",
+                card, text=display_name(pokemon.name),
                 font=ctk.CTkFont(size=14, weight="bold"), anchor="w",
             ).grid(row=0, column=1, sticky="w", pady=(8, 0))
             ctk.CTkLabel(

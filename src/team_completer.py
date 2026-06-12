@@ -158,14 +158,21 @@ class TeamCompleter:
         self,
         max_generation: int | None = None,
         allow_legendary: bool = True,
+        exact_generation: int | None = None,
     ) -> list["Pokemon"]:
         """Alle Pool-Pokemon, optional gefiltert.
 
-        max_generation=None heisst: keine Filterung (alle Generationen).
+        max_generation: nur Pokemon BIS zu dieser Generation (None = alle).
+        exact_generation: nur Pokemon GENAU dieser Generation - z.B. für
+            ein reines Gen-5-Team passend zu Schwarz/Weiss. Hat Vorrang
+            vor max_generation.
         allow_legendary=False entfernt Legendäre/Mythische/Ultrabestien.
         """
         result = list(self._pool)
-        if max_generation is not None:
+        if exact_generation is not None:
+            result = [p for p in result
+                      if generation_of(p.pokedex_id) == exact_generation]
+        elif max_generation is not None:
             result = [p for p in result
                       if 0 < generation_of(p.pokedex_id) <= max_generation]
         if not allow_legendary:
@@ -230,11 +237,14 @@ class TeamCompleter:
         max_generation: int | None = None,
         allow_legendary: bool = False,
         variety: bool = True,
+        exact_generation: int | None = None,
     ) -> "Team":
         """Fülle das Team auf bis zu Team.MAX_SIZE Pokemon auf.
 
         Args:
             max_generation: nur Pokemon bis zu dieser Generation (None = alle).
+            exact_generation: nur Pokemon GENAU dieser Generation - für
+                ein sortenreines Team passend zu einem bestimmten Spiel.
             allow_legendary: Legendäre/Mythische/Ultrabestien zulassen
                 (Standard: aus - für spannendere, nicht-overpowerte Teams).
             variety: pro Schritt gewichtet-zufällig aus den besten
@@ -247,7 +257,8 @@ class TeamCompleter:
         """
         already_in_team = {p.pokedex_id for p in team}
         candidates = [
-            c for c in self.candidates(max_generation, allow_legendary)
+            c for c in self.candidates(max_generation, allow_legendary,
+                                       exact_generation)
             if c.pokedex_id not in already_in_team
         ]
 

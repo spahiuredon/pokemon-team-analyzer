@@ -210,6 +210,33 @@ class ScoringAndVarietyTests(unittest.TestCase):
         self.assertEqual([p.pokedex_id for p in team_a],
                          [p.pokedex_id for p in team_b])
 
+    def test_exact_generation_filter(self):
+        pool = [
+            make_pokemon("charizard", 6, ["fire", "flying"], 534),    # Gen 1
+            make_pokemon("typhlosion", 157, ["fire"], 534),           # Gen 2
+            make_pokemon("serperior", 497, ["grass"], 528),           # Gen 5
+            make_pokemon("samurott", 503, ["water"], 528),            # Gen 5
+            make_pokemon("haxorus", 612, ["dragon"], 540),            # Gen 5
+        ]
+        completer = TeamCompleter(pool)
+        only_gen5 = completer.candidates(exact_generation=5)
+        self.assertEqual({p.pokedex_id for p in only_gen5}, {497, 503, 612})
+
+        team = Team("Gen5")
+        completer.complete(team, exact_generation=5)
+        self.assertEqual(len(team), 3)
+        for p in team:
+            self.assertEqual(generation_of(p.pokedex_id), 5)
+
+    def test_exact_generation_overrides_max(self):
+        pool = [
+            make_pokemon("charizard", 6, ["fire", "flying"], 534),  # Gen 1
+            make_pokemon("serperior", 497, ["grass"], 528),         # Gen 5
+        ]
+        completer = TeamCompleter(pool)
+        result = completer.candidates(max_generation=1, exact_generation=5)
+        self.assertEqual([p.pokedex_id for p in result], [497])
+
     def test_variety_false_is_deterministic_greedy(self):
         pool = [make_pokemon(f"mon{i}", i, ["normal"], 400 + i * 10)
                 for i in range(1, 15)]

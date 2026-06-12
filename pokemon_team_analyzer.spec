@@ -23,6 +23,7 @@ datas = [
     (str(ROOT / "data" / "cache"), "data/cache"),
     (str(ROOT / "data" / "sprites"), "data/sprites"),
     (str(ROOT / "data" / "app_icon.png"), "data"),
+    (str(ROOT / "data" / "german_names.json"), "data"),
 ]
 # CustomTkinter bringt eigene Theme-JSONs/Assets mit - mit einpacken.
 datas += collect_data_files("customtkinter")
