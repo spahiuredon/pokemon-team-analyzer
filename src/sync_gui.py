@@ -30,6 +30,10 @@ from .save_sync import (
     sync_game,
 )
 
+# Textfarbe für Buttons mit transparentem Hintergrund (Theme-Default
+# wäre im Light Mode unsichtbar - weiss auf weiss).
+TEXT_ON_TRANSPARENT = ("gray10", "#DCE4EE")
+
 HELP_TEXT = """\
 So funktioniert der Sync - einmal lesen, danach ist es ein Klick:
 
@@ -91,6 +95,7 @@ class SyncTab:
         self.help_button = ctk.CTkButton(
             help_header, text="❓  Wie funktioniert der Sync?",
             fg_color="transparent", border_width=1, anchor="w",
+            text_color=TEXT_ON_TRANSPARENT,
             command=self._toggle_help)
         self.help_button.pack(fill="x")
 
@@ -138,6 +143,7 @@ class SyncTab:
             row=1, column=0, padx=12, pady=(4, 2), sticky="w")
         ctk.CTkButton(step2, text="Einrichten...", width=110,
                       fg_color="transparent", border_width=1,
+                      text_color=TEXT_ON_TRANSPARENT,
                       command=self._setup_game).grid(
             row=1, column=1, padx=4, pady=(4, 2), sticky="w")
         self.game_status = ctk.CTkLabel(step2, text="", anchor="w",
@@ -170,10 +176,12 @@ class SyncTab:
         direction.grid(row=3, column=1, sticky="w", pady=(8, 10))
         ctk.CTkButton(direction, text="Nur 3DS → PC", width=120,
                       fg_color="transparent", border_width=1,
+                      text_color=TEXT_ON_TRANSPARENT,
                       command=lambda: self._run_sync("3DS")).pack(
             side="left", padx=2)
         ctk.CTkButton(direction, text="Nur PC → 3DS", width=120,
                       fg_color="transparent", border_width=1,
+                      text_color=TEXT_ON_TRANSPARENT,
                       command=lambda: self._run_sync("PC")).pack(
             side="left", padx=2)
 
@@ -181,6 +189,7 @@ class SyncTab:
         self.advanced_button = ctk.CTkButton(
             self.frame, text="▸  Erweitert (Cloud-Ordner, Sync ohne 3DS)",
             fg_color="transparent", border_width=1, anchor="w",
+            text_color=TEXT_ON_TRANSPARENT,
             command=self._toggle_advanced)
         self.advanced_button.grid(row=row, column=0, sticky="ew", pady=(8, 2))
         row += 1

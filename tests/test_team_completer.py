@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import unittest
 
 from src.pokemon import Pokemon
@@ -10,6 +11,7 @@ from src.team_completer import (
     GENERATION_RANGES,
     TeamCompleter,
     generation_of,
+    is_special,
 )
 
 
@@ -116,6 +118,105 @@ class TeamCompleterTests(unittest.TestCase):
             s = completer.score(candidate, team)
             self.assertFalse(s != s, "Score ist NaN")  # NaN != NaN ist True
             self.assertTrue(0 <= s < 100, f"Score {s} ausserhalb erwarteter Range")
+
+
+class SpecialPokemonTests(unittest.TestCase):
+    """Legendäre/Mythische/Ultrabestien erkennen und filtern."""
+
+    def test_is_special_known_ids(self):
+        self.assertTrue(is_special(150))    # Mewtu
+        self.assertTrue(is_special(151))    # Mew (mythisch)
+        self.assertTrue(is_special(384))    # Rayquaza
+        self.assertTrue(is_special(493))    # Arceus
+        self.assertTrue(is_special(793))    # Anego (Ultrabestie)
+        self.assertTrue(is_special(1007))   # Koraidon
+
+    def test_is_special_normal_pokemon(self):
+        for pid in (1, 25, 6, 445, 700, 1000):
+            self.assertFalse(is_special(pid), f"#{pid} ist nicht legendär")
+
+    def test_complete_excludes_legendaries_by_default(self):
+        pool = [
+            make_pokemon("mewtwo", 150, ["psychic"], 680),
+            make_pokemon("rayquaza", 384, ["dragon", "flying"], 680),
+            make_pokemon("charizard", 6, ["fire", "flying"], 534),
+            make_pokemon("blastoise", 9, ["water"], 530),
+            make_pokemon("venusaur", 3, ["grass", "poison"], 525),
+        ]
+        team = Team("Test")
+        TeamCompleter(pool).complete(team)
+        ids = {p.pokedex_id for p in team}
+        self.assertNotIn(150, ids)
+        self.assertNotIn(384, ids)
+        self.assertEqual(len(team), 3)  # nur die drei normalen
+
+    def test_allow_legendary_includes_them(self):
+        pool = [
+            make_pokemon("mewtwo", 150, ["psychic"], 680),
+            make_pokemon("charizard", 6, ["fire", "flying"], 534),
+        ]
+        completer = TeamCompleter(pool)
+        self.assertEqual(len(completer.candidates(allow_legendary=False)), 1)
+        self.assertEqual(len(completer.candidates(allow_legendary=True)), 2)
+        team = Team("Test")
+        completer.complete(team, allow_legendary=True)
+        self.assertEqual(len(team), 2)
+
+    def test_mega_forms_are_filtered_from_pool(self):
+        pool = [
+            make_pokemon("charizard", 6, ["fire", "flying"], 534),
+            make_pokemon("charizard-mega-x", 10034, ["fire", "dragon"], 634),
+            make_pokemon("gengar-gmax", 10202, ["ghost", "poison"], 600),
+        ]
+        completer = TeamCompleter(pool)
+        self.assertEqual(completer.pool_size, 1)
+
+    def test_pool_with_only_megas_raises(self):
+        with self.assertRaises(ValueError):
+            TeamCompleter([make_pokemon("charizard-mega-x", 10034,
+                                        ["fire", "dragon"], 634)])
+
+
+class ScoringAndVarietyTests(unittest.TestCase):
+    """Sweet-Spot-Scoring und Zufalls-Varianz."""
+
+    def test_sweet_spot_beats_raw_power(self):
+        # Bei leerem Team zählt praktisch nur der Stats-Score: ein
+        # 510er-Pokemon muss besser abschneiden als ein 720er-Legendäres.
+        pool = [
+            make_pokemon("balanced", 100, ["water"], 510),
+            make_pokemon("monster", 101, ["water"], 720),
+        ]
+        completer = TeamCompleter(pool)
+        team = Team("leer")
+        self.assertGreater(completer.score(pool[0], team),
+                           completer.score(pool[1], team))
+
+    def test_weak_pokemon_score_low(self):
+        pool = [
+            make_pokemon("caterpie", 10, ["bug"], 195),
+            make_pokemon("butterfree", 12, ["bug", "flying"], 395),
+        ]
+        completer = TeamCompleter(pool)
+        team = Team("leer")
+        self.assertLess(completer.score(pool[0], team),
+                        completer.score(pool[1], team))
+
+    def test_variety_is_reproducible_with_seed(self):
+        pool = [make_pokemon(f"mon{i}", i, ["normal"], 450 + i)
+                for i in range(1, 30)]
+        team_a = TeamCompleter(pool, rng=random.Random(42)).complete(Team("A"))
+        team_b = TeamCompleter(pool, rng=random.Random(42)).complete(Team("B"))
+        self.assertEqual([p.pokedex_id for p in team_a],
+                         [p.pokedex_id for p in team_b])
+
+    def test_variety_false_is_deterministic_greedy(self):
+        pool = [make_pokemon(f"mon{i}", i, ["normal"], 400 + i * 10)
+                for i in range(1, 15)]
+        team_a = TeamCompleter(pool).complete(Team("A"), variety=False)
+        team_b = TeamCompleter(pool).complete(Team("B"), variety=False)
+        self.assertEqual({p.pokedex_id for p in team_a},
+                         {p.pokedex_id for p in team_b})
 
 
 if __name__ == "__main__":

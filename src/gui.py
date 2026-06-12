@@ -42,6 +42,11 @@ from .team_completer import GENERATION_RANGES, TeamCompleter
 
 SPRITE_SIZE = 64
 
+# Textfarbe für Buttons mit transparentem Hintergrund: das Theme-Default
+# (helles Weiss) ist im Light Mode unsichtbar - daher explizit
+# (hell-Modus-Farbe, dunkel-Modus-Farbe) setzen.
+TEXT_ON_TRANSPARENT = ("gray10", "#DCE4EE")
+
 # Offizielle Typ-Farben für die Badges auf den Team-Karten.
 TYPE_COLORS: dict[str, str] = {
     "normal": "#A8A77A", "fire": "#EE8130", "water": "#6390F0",
@@ -163,13 +168,20 @@ class PokemonTeamGUI:
         ctk.CTkOptionMenu(bottom, variable=self.gen_var,
                           values=gen_values).grid(
             row=4, column=0, sticky="ew", pady=(2, 4))
+        self.legendary_var = tk.BooleanVar(value=False)
+        ctk.CTkCheckBox(bottom, variable=self.legendary_var,
+                        text="Legendäre & Mythische erlauben",
+                        font=ctk.CTkFont(size=12),
+                        checkbox_width=18, checkbox_height=18).grid(
+            row=5, column=0, sticky="w", pady=(2, 4))
         ctk.CTkButton(bottom, text="Team auto-auffüllen",
                       command=self._auto_complete).grid(
-            row=5, column=0, sticky="ew", pady=(0, 4))
+            row=6, column=0, sticky="ew", pady=(0, 4))
         ctk.CTkButton(bottom, text="Alle Pokemon laden (PokeAPI)",
                       fg_color="transparent", border_width=1,
+                      text_color=TEXT_ON_TRANSPARENT,
                       command=self._download_all_pokemon).grid(
-            row=6, column=0, sticky="ew")
+            row=7, column=0, sticky="ew")
 
     # ------------------------------------------------------------------ #
     # Team-Panel (Mitte): Karten
@@ -189,6 +201,7 @@ class PokemonTeamGUI:
             row=0, column=0, sticky="w")
         ctk.CTkButton(header, text="Leeren", width=70,
                       fg_color="transparent", border_width=1,
+                      text_color=TEXT_ON_TRANSPARENT,
                       command=self._clear_team).grid(row=0, column=1)
 
         self.team_frame = ctk.CTkScrollableFrame(panel, fg_color="transparent")
@@ -409,6 +422,12 @@ class PokemonTeamGUI:
         self._set_status(f"Preset geladen: {name}")
 
     def _auto_complete(self) -> None:
+        if len(self.team) >= Team.MAX_SIZE:
+            messagebox.showinfo(
+                "Team ist voll",
+                "Das Team hat schon 6 Pokemon. Entferne welche oder leere "
+                "das Team, um eine neue Variante zu bekommen.")
+            return
         pool: list[Pokemon] = []
         for cache_file in self.client.cache_dir.glob("pokemon_*.json"):
             try:
@@ -424,13 +443,16 @@ class PokemonTeamGUI:
         max_gen = (None if gen_label == "Alle"
                    else int(gen_label.removeprefix("Gen ").strip()))
         try:
-            TeamCompleter(pool).complete(self.team, max_generation=max_gen)
+            TeamCompleter(pool).complete(
+                self.team, max_generation=max_gen,
+                allow_legendary=self.legendary_var.get())
         except (ValueError, KeyError) as exc:
             messagebox.showerror("Fehler beim Auffüllen", str(exc))
             return
         self._refresh_team_view()
         self._refresh_analysis()
-        self._set_status("Team auto-vervollständigt.")
+        self._set_status("Team auto-vervollständigt - nochmal klicken "
+                         "ergibt eine neue Variante.")
 
     # ------------------------------------------------------------------ #
     # Team-Karten rendern
@@ -481,6 +503,7 @@ class PokemonTeamGUI:
             ctk.CTkButton(
                 card, text="✕", width=28, height=28,
                 fg_color="transparent", border_width=1,
+                text_color=TEXT_ON_TRANSPARENT,
                 hover_color=("#fca5a5", "#7f1d1d"),
                 command=lambda n=pokemon.name: self._remove_member(n),
             ).grid(row=0, column=2, rowspan=3, padx=10)
