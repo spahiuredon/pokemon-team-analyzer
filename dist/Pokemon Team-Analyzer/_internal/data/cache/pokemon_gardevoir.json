@@ -1,0 +1,57 @@
+{
+  "name": "gardevoir",
+  "id": 282,
+  "types": [
+    {
+      "type": {
+        "name": "psychic"
+      }
+    },
+    {
+      "type": {
+        "name": "fairy"
+      }
+    }
+  ],
+  "stats": [
+    {
+      "stat": {
+        "name": "hp"
+      },
+      "base_stat": 68
+    },
+    {
+      "stat": {
+        "name": "attack"
+      },
+      "base_stat": 65
+    },
+    {
+      "stat": {
+        "name": "defense"
+      },
+      "base_stat": 65
+    },
+    {
+      "stat": {
+        "name": "special-attack"
+      },
+      "base_stat": 125
+    },
+    {
+      "stat": {
+        "name": "special-defense"
+      },
+      "base_stat": 115
+    },
+    {
+      "stat": {
+        "name": "speed"
+      },
+      "base_stat": 80
+    }
+  ],
+  "sprites": {
+    "front_default": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/282.png"
+  }
+}

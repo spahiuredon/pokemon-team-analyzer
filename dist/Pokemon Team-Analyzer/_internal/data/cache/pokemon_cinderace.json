@@ -1,0 +1,52 @@
+{
+  "name": "cinderace",
+  "id": 815,
+  "types": [
+    {
+      "type": {
+        "name": "fire"
+      }
+    }
+  ],
+  "stats": [
+    {
+      "stat": {
+        "name": "hp"
+      },
+      "base_stat": 80
+    },
+    {
+      "stat": {
+        "name": "attack"
+      },
+      "base_stat": 116
+    },
+    {
+      "stat": {
+        "name": "defense"
+      },
+      "base_stat": 75
+    },
+    {
+      "stat": {
+        "name": "special-attack"
+      },
+      "base_stat": 65
+    },
+    {
+      "stat": {
+        "name": "special-defense"
+      },
+      "base_stat": 75
+    },
+    {
+      "stat": {
+        "name": "speed"
+      },
+      "base_stat": 119
+    }
+  ],
+  "sprites": {
+    "front_default": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/815.png"
+  }
+}

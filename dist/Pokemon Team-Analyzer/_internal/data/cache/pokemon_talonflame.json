@@ -1,0 +1,57 @@
+{
+  "name": "talonflame",
+  "id": 663,
+  "types": [
+    {
+      "type": {
+        "name": "fire"
+      }
+    },
+    {
+      "type": {
+        "name": "flying"
+      }
+    }
+  ],
+  "stats": [
+    {
+      "stat": {
+        "name": "hp"
+      },
+      "base_stat": 78
+    },
+    {
+      "stat": {
+        "name": "attack"
+      },
+      "base_stat": 81
+    },
+    {
+      "stat": {
+        "name": "defense"
+      },
+      "base_stat": 71
+    },
+    {
+      "stat": {
+        "name": "special-attack"
+      },
+      "base_stat": 74
+    },
+    {
+      "stat": {
+        "name": "special-defense"
+      },
+      "base_stat": 69
+    },
+    {
+      "stat": {
+        "name": "speed"
+      },
+      "base_stat": 126
+    }
+  ],
+  "sprites": {
+    "front_default": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/663.png"
+  }
+}

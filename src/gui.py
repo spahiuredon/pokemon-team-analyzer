@@ -58,12 +58,14 @@ class PokemonTeamGUI:
         self.root.geometry("1200x780")
 
         # Cache-Ordner: derselbe wie für das Notebook (data/cache).
-        project_root = Path(__file__).resolve().parent.parent
-        self.client = PokeAPIClient(cache_dir=project_root / "data" / "cache",
-                                    sprite_dir=project_root / "data" / "sprites")
+        # In der gepackten App (PyInstaller) zeigt data_dir() stattdessen
+        # auf einen beschreibbaren Ordner im Home-Verzeichnis.
+        from .app_paths import app_icon_path, data_dir
+        self.client = PokeAPIClient(cache_dir=data_dir() / "cache",
+                                    sprite_dir=data_dir() / "sprites")
 
         # App-Icon (Pokeball) für Fenster und Dock setzen.
-        self._set_app_icon(project_root / "data" / "app_icon.png")
+        self._set_app_icon(app_icon_path())
         self.team = Team("Mein Team")
         # Aktuell im rechten Bereich angezeigte matplotlib-Figur
         self._current_canvas: FigureCanvasTkAgg | None = None
@@ -221,6 +223,10 @@ class PokemonTeamGUI:
         self.plot_tab = ttk.Frame(self.tabs)
         self.tabs.add(self.text_tab, text="Tabelle / Text")
         self.tabs.add(self.plot_tab, text="Plot")
+
+        # Tab für die 3DS<->PC Save-Synchronisation (eigenes Modul).
+        from .sync_gui import add_sync_tab
+        self.sync_tab = add_sync_tab(self.root, self.tabs)
 
         self.text_widget = tk.Text(self.text_tab, font=("Courier", 10), wrap=tk.NONE)
         scroll_y = ttk.Scrollbar(self.text_tab, command=self.text_widget.yview)

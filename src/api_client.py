@@ -48,14 +48,16 @@ class PokeAPIClient:
     ) -> None:
         self.base_url = base_url or self.BASE_URL
         self.timeout = timeout
-        # Cache-Verzeichnis: Standard ist data/cache neben dem Projekt.
+        # Cache-Verzeichnis: Standard ist data/cache (frozen-aware,
+        # siehe src/app_paths.py - gepackte App nutzt den User-Ordner).
+        from .app_paths import data_dir
         if cache_dir is None:
-            cache_dir = Path(__file__).resolve().parent.parent / "data" / "cache"
+            cache_dir = data_dir() / "cache"
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        # Sprite-Verzeichnis: Standard ist data/sprites neben dem Projekt.
+        # Sprite-Verzeichnis: Standard ist data/sprites neben dem Cache.
         if sprite_dir is None:
-            sprite_dir = Path(__file__).resolve().parent.parent / "data" / "sprites"
+            sprite_dir = data_dir() / "sprites"
         self.sprite_dir = Path(sprite_dir)
         self.sprite_dir.mkdir(parents=True, exist_ok=True)
 

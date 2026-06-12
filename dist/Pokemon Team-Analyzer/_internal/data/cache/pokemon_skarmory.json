@@ -1,0 +1,57 @@
+{
+  "name": "skarmory",
+  "id": 227,
+  "types": [
+    {
+      "type": {
+        "name": "steel"
+      }
+    },
+    {
+      "type": {
+        "name": "flying"
+      }
+    }
+  ],
+  "stats": [
+    {
+      "stat": {
+        "name": "hp"
+      },
+      "base_stat": 65
+    },
+    {
+      "stat": {
+        "name": "attack"
+      },
+      "base_stat": 80
+    },
+    {
+      "stat": {
+        "name": "defense"
+      },
+      "base_stat": 140
+    },
+    {
+      "stat": {
+        "name": "special-attack"
+      },
+      "base_stat": 40
+    },
+    {
+      "stat": {
+        "name": "special-defense"
+      },
+      "base_stat": 70
+    },
+    {
+      "stat": {
+        "name": "speed"
+      },
+      "base_stat": 70
+    }
+  ],
+  "sprites": {
+    "front_default": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/227.png"
+  }
+}

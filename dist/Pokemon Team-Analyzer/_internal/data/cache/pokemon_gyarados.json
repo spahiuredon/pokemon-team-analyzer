@@ -1,0 +1,57 @@
+{
+  "name": "gyarados",
+  "id": 130,
+  "types": [
+    {
+      "type": {
+        "name": "water"
+      }
+    },
+    {
+      "type": {
+        "name": "flying"
+      }
+    }
+  ],
+  "stats": [
+    {
+      "stat": {
+        "name": "hp"
+      },
+      "base_stat": 95
+    },
+    {
+      "stat": {
+        "name": "attack"
+      },
+      "base_stat": 125
+    },
+    {
+      "stat": {
+        "name": "defense"
+      },
+      "base_stat": 79
+    },
+    {
+      "stat": {
+        "name": "special-attack"
+      },
+      "base_stat": 60
+    },
+    {
+      "stat": {
+        "name": "special-defense"
+      },
+      "base_stat": 100
+    },
+    {
+      "stat": {
+        "name": "speed"
+      },
+      "base_stat": 81
+    }
+  ],
+  "sprites": {
+    "front_default": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/130.png"
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "venusaur",
+  "id": 3,
+  "types": [
+    {
+      "type": {
+        "name": "grass"
+      }
+    },
+    {
+      "type": {
+        "name": "poison"
+      }
+    }
+  ],
+  "stats": [
+    {
+      "stat": {
+        "name": "hp"
+      },
+      "base_stat": 80
+    },
+    {
+      "stat": {
+        "name": "attack"
+      },
+      "base_stat": 82
+    },
+    {
+      "stat": {
+        "name": "defense"
+      },
+      "base_stat": 83
+    },
+    {
+      "stat": {
+        "name": "special-attack"
+      },
+      "base_stat": 100
+    },
+    {
+      "stat": {
+        "name": "special-defense"
+      },
+      "base_stat": 100
+    },
+    {
+      "stat": {
+        "name": "speed"
+      },
+      "base_stat": 80
+    }
+  ],
+  "sprites": {
+    "front_default": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/3.png"
+  }
+}

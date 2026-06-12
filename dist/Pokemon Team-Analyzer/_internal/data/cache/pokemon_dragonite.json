@@ -1,0 +1,57 @@
+{
+  "name": "dragonite",
+  "id": 149,
+  "types": [
+    {
+      "type": {
+        "name": "dragon"
+      }
+    },
+    {
+      "type": {
+        "name": "flying"
+      }
+    }
+  ],
+  "stats": [
+    {
+      "stat": {
+        "name": "hp"
+      },
+      "base_stat": 91
+    },
+    {
+      "stat": {
+        "name": "attack"
+      },
+      "base_stat": 134
+    },
+    {
+      "stat": {
+        "name": "defense"
+      },
+      "base_stat": 95
+    },
+    {
+      "stat": {
+        "name": "special-attack"
+      },
+      "base_stat": 100
+    },
+    {
+      "stat": {
+        "name": "special-defense"
+      },
+      "base_stat": 100
+    },
+    {
+      "stat": {
+        "name": "speed"
+      },
+      "base_stat": 80
+    }
+  ],
+  "sprites": {
+    "front_default": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/149.png"
+  }
+}
