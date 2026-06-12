@@ -9,8 +9,11 @@ Die App lädt Pokemon-Daten von der öffentlichen
 benutzerdefiniertes Team und analysiert die Stärken und
 Schwächen des Teams: Typ-Coverage (welche Angriffstypen sind für
 das Team gefährlich), Base-Stats-Vergleiche und eine
-Typ-Effektivitäts-Heatmap. Das GUI ist mit CustomTkinter gebaut
-und folgt automatisch dem Hell-/Dunkelmodus des Systems.
+Typ-Effektivitäts-Heatmap. Das GUI ist eine Web-Oberfläche
+(HTML/CSS/JS) in einem nativen Desktop-Fenster (pywebview) und
+folgt automatisch dem Hell-/Dunkelmodus des Systems - mit
+manuellem Umschalter. Suche und Anzeige funktionieren mit
+deutschen und englischen Pokemon-Namen.
 
 ## Installation
 
@@ -29,17 +32,20 @@ pip install -r requirements.txt
 ### GUI starten
 
 ```bash
-python -m src.gui
+python app.py
 ```
 
-Es öffnet sich ein Fenster: links die Sidebar mit Suche,
-Pokemon-Liste, vorgefertigten Champion-Teams und
-Auto-Vervollständigung; in der Mitte das aktuelle Team als Karten
-mit Sprites und Typ-Badges; rechts Tabs für Stats-Tabelle,
-Typ-Coverage, Plots und den 3DS-Sync. Die Analyse-Tabs
-aktualisieren sich automatisch, sobald sich das Team ändert.
-Tkinter kommt mit Python (auf macOS und Windows von Haus aus,
-unter Linux mit `apt install python3-tk`).
+Es öffnet sich ein Fenster: links die Sidebar mit Suche
+(deutsch/englisch), Pokemon-Liste, vorgefertigten Champion-Teams
+und Auto-Vervollständigung (inkl. "Nur Gen n"-Filter und
+Legendären-Schalter); in der Mitte das aktuelle Team als Karten
+mit offiziellem Artwork, Typ-Badges und Stat-Balken; rechts Tabs
+für Übersicht (Kennzahlen + Schwächen), Tabelle, Plots
+(Stats-Balken + Typ-Heatmap) und den 3DS-Sync. Die Analyse
+aktualisiert sich automatisch, sobald sich das Team ändert.
+
+Das alte Tkinter-GUI ist weiterhin als Fallback vorhanden:
+`python -m src.gui` (braucht zusätzlich `customtkinter`).
 
 ### Demo-Notebook
 
@@ -74,7 +80,11 @@ python data/seed_cache.py
 | `src/type_chart.py`    | `TypeChart` - die 18×18 Typ-Effektivitäts-Matrix, mit `effectiveness()`, `weaknesses_of()`, `resistances_of()`. |
 | `src/team.py`          | `Team` - Sammlung von max. 6 Pokemon, mit `add`, `remove`, Duplikat- und Größenprüfung. |
 | `src/analyzer.py`      | `TeamAnalyzer` - die Pandas-Schicht: `to_stats_dataframe`, `summary`, `type_coverage`, `biggest_weaknesses` und drei matplotlib-Plots. |
-| `src/gui.py`           | `PokemonTeamGUI` - einfaches Tkinter-Fenster zum Zusammenstellen des Teams und zum Anzeigen aller Analysen + Plots. |
+| `src/webgui.py`        | Startet das Web-GUI im nativen Fenster (pywebview) und liefert Datei-Dialoge. |
+| `src/webgui_api.py`    | Backend-API fürs Frontend: Suche, Team, Analyse als JSON, Sync, Cache, Bulk-Download. |
+| `web/index.html`       | Das komplette Frontend (HTML/CSS/JS): Layout, Team-Karten, Plots, Sync-Oberfläche. |
+| `src/gui.py`           | Altes CustomTkinter-GUI (Legacy-Fallback). |
+| `src/translations.py`  | Deutsche Pokemon-Namen: Suche und Anzeige (offline, `data/german_names.json`). |
 | `src/presets.py`       | Vorgefertigte Champion-Teams aus den Hauptspielen (Gen 1 Klassiker, Gen 1 Blue, Gen 3 Steven, Gen 4 Cynthia). |
 | `src/team_completer.py`| `TeamCompleter` - Greedy-Algorithmus, der ein partielles Team auf 6 Pokemon auffüllt. Berücksichtigt Total-Stats, Typ-Coverage (deckt Schwächen ab) und Typ-Diversität. Mit optionalem Generations-Filter (Gen 1-9). |
 | `src/save_sync.py`     | Save-Synchronisation 3DS↔PC: Spiele-Registry (Platin bis Ultra Mond), FTP-Client für ftpd, Sync-Engine (neuester gewinnt, SHA-256-Vergleich, automatische Backups), optionaler Cloud-Ordner. |

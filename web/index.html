@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pokemon Team-Analyzer</title>
+<style>
+:root {
+  --bg: #f4f4f2; --surface: #ffffff; --surface2: #ededeb;
+  --text: #1b1b1b; --muted: #6b7280; --faint: #9ca3af;
+  --border: rgba(0,0,0,.09); --accent: #e24b4a; --accent-text: #ffffff;
+  --ok: #15803d; --warn: #b45309; --err: #b91c1c;
+}
+html[data-theme="dark"] {
+  --bg: #121417; --surface: #1c2024; --surface2: #262b30;
+  --text: #ececec; --muted: #9aa0a6; --faint: #6b7280;
+  --border: rgba(255,255,255,.09); --accent: #ef6461;
+  --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
+}
+* { box-sizing: border-box; margin: 0; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg); color: var(--text); font-size: 14px;
+  height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+}
+header {
+  display: flex; align-items: center; gap: 14px; padding: 10px 18px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.logo { width: 30px; height: 30px; border-radius: 50%; background: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 600; }
+h1 { font-size: 16px; font-weight: 600; }
+.searchwrap { flex: 0 1 320px; position: relative; }
+.searchwrap input {
+  width: 100%; padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text); outline: none; font-size: 13px;
+}
+.searchwrap input:focus { border-color: var(--accent); }
+.spacer { flex: 1; }
+.iconbtn {
+  border: 1px solid var(--border); background: transparent; color: var(--text);
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px;
+}
+.iconbtn:hover { background: var(--surface2); }
+main { flex: 1; display: grid; grid-template-columns: 290px 330px 1fr;
+  gap: 0; min-height: 0; }
+.panel { overflow-y: auto; padding: 14px; min-height: 0; }
+#sidebar { background: var(--surface); border-right: 1px solid var(--border); }
+#teampanel { border-right: 1px solid var(--border); }
+.sectionlabel { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: 14px 0 6px; }
+.pokerow { display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+  border-radius: 8px; }
+.pokerow:hover { background: var(--surface2); }
+.pokerow img { width: 30px; height: 30px; image-rendering: pixelated; }
+.pokerow .nm { flex: 1; font-size: 13px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.pokerow .tp { font-size: 11px; color: var(--muted); }
+.pokerow button { border: none; background: var(--surface2); color: var(--text);
+  border-radius: 6px; width: 24px; height: 24px; cursor: pointer; }
+.pokerow button:hover { background: var(--accent); color: #fff; }
+select, input[type=text], input[type=number] {
+  width: 100%; padding: 7px 10px; border-radius: 8px; font-size: 13px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); outline: none;
+}
+.btn {
+  display: block; width: 100%; padding: 8px 12px; margin-top: 6px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text);
+  cursor: pointer; font-size: 13px; text-align: center;
+}
+.btn:hover { background: var(--surface2); }
+.btn.primary { background: var(--accent); border-color: var(--accent);
+  color: var(--accent-text); font-weight: 600; }
+.btn.primary:hover { filter: brightness(0.93); }
+.checkrow { display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  font-size: 13px; color: var(--text); }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px; margin-bottom: 10px;
+}
+.teamcard { display: flex; gap: 12px; align-items: center; position: relative; }
+.teamcard img { width: 64px; height: 64px; object-fit: contain; }
+.teamcard .body { flex: 1; min-width: 0; }
+.teamcard .titleline { display: flex; align-items: baseline; gap: 8px; }
+.teamcard .titleline .n { font-weight: 600; font-size: 14px; }
+.teamcard .titleline .i { font-size: 11px; color: var(--faint); }
+.teamcard .titleline .t { margin-left: auto; font-size: 12px; color: var(--muted); }
+.badge { display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 2px 9px; border-radius: 999px; color: #fff; margin-right: 4px; }
+.statbars { display: flex; gap: 3px; margin-top: 7px; }
+.statbars .bar { flex: 1; height: 4px; border-radius: 2px;
+  background: var(--surface2); overflow: hidden; }
+.statbars .bar i { display: block; height: 100%; border-radius: 2px; }
+.removebtn { position: absolute; top: 6px; right: 6px; border: none;
+  background: transparent; color: var(--faint); cursor: pointer;
+  font-size: 14px; border-radius: 6px; width: 24px; height: 24px; }
+.removebtn:hover { background: var(--err); color: #fff; }
+.emptyslot { border: 1.5px dashed var(--border); border-radius: 12px;
+  padding: 16px; text-align: center; color: var(--faint);
+  font-size: 13px; margin-bottom: 10px; }
+.tabs { display: inline-flex; background: var(--surface2);
+  border-radius: 999px; padding: 3px; margin-bottom: 14px; }
+.tabs button { border: none; background: transparent; color: var(--muted);
+  padding: 6px 16px; border-radius: 999px; cursor: pointer; font-size: 13px; }
+.tabs button.active { background: var(--surface); color: var(--text);
+  font-weight: 600; border: 1px solid var(--border); }
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  margin-bottom: 16px; }
+.metric { background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; }
+.metric .l { font-size: 11px; color: var(--muted); }
+.metric .v { font-size: 22px; font-weight: 600; margin-top: 2px; }
+.weakrow { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+.weakrow .track { flex: 1; height: 7px; background: var(--surface2);
+  border-radius: 4px; overflow: hidden; }
+.weakrow .track i { display: block; height: 100%; border-radius: 4px; }
+.weakrow .c { font-size: 12px; color: var(--muted); min-width: 26px;
+  text-align: right; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted); padding: 6px 8px;
+  border-bottom: 1px solid var(--border); }
+td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: var(--surface2); }
+.hm { display: grid; gap: 2px; font-size: 10px; }
+.hm div { padding: 4px 2px; text-align: center; border-radius: 3px;
+  overflow: hidden; white-space: nowrap; }
+.steps .step { margin-bottom: 10px; }
+.steps .head { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.statusdot { font-size: 12px; color: var(--muted); margin-left: 8px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { margin-top: 0 !important; }
+.log { background: var(--surface2); border-radius: 8px; padding: 10px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px;
+  max-height: 160px; overflow-y: auto; white-space: pre-wrap;
+  color: var(--muted); }
+details { margin-bottom: 12px; }
+summary { cursor: pointer; font-size: 13px; color: var(--muted);
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; }
+details[open] summary { margin-bottom: 8px; }
+details .inner { font-size: 13px; line-height: 1.55; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 14px; }
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  display: none; align-items: center; justify-content: center; z-index: 50; }
+.overlay.open { display: flex; }
+.modal { background: var(--surface); border-radius: 14px; padding: 18px;
+  width: 520px; max-width: 92vw; max-height: 84vh; overflow-y: auto;
+  border: 1px solid var(--border); }
+.modal h3 { font-size: 15px; margin-bottom: 10px; }
+.modal label { font-size: 12px; color: var(--muted); display: block;
+  margin: 10px 0 4px; }
+.browser { border: 1px solid var(--border); border-radius: 8px;
+  max-height: 260px; overflow-y: auto; margin-top: 8px; }
+.browser div { padding: 6px 10px; cursor: pointer; font-size: 13px;
+  font-family: ui-monospace, Menlo, monospace; }
+.browser div:hover { background: var(--surface2); }
+#toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  background: var(--text); color: var(--bg); padding: 9px 18px;
+  border-radius: 999px; font-size: 13px; opacity: 0;
+  transition: opacity .25s; pointer-events: none; z-index: 99; }
+#toast.show { opacity: 1; }
+.progress { height: 6px; background: var(--surface2); border-radius: 3px;
+  overflow: hidden; margin-top: 8px; display: none; }
+.progress i { display: block; height: 100%; background: var(--accent);
+  width: 0; transition: width .2s; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 6px;
+  line-height: 1.45; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">P</div>
+  <h1>Pokemon Team-Analyzer</h1>
+  <div class="searchwrap">
+    <input id="search" type="text" placeholder="Suchen – deutsch oder englisch …" autocomplete="off">
+  </div>
+  <div class="spacer"></div>
+  <button class="iconbtn" id="themebtn" title="Hell/Dunkel umschalten">◐</button>
+</header>
+
+<main>
+  <aside class="panel" id="sidebar">
+    <div class="sectionlabel">Pokemon <span id="listinfo" style="text-transform:none;letter-spacing:0"></span></div>
+    <div id="pokelist"></div>
+
+    <div class="sectionlabel">Vorgefertigtes Team</div>
+    <select id="preset"></select>
+    <button class="btn" id="loadpreset">Team laden</button>
+
+    <div class="sectionlabel">Auto-Vervollständigung</div>
+    <select id="genfilter"></select>
+    <label class="checkrow"><input type="checkbox" id="legendary">
+      Legendäre &amp; Mythische erlauben</label>
+    <button class="btn primary" id="autofill">Team auto-auffüllen</button>
+
+    <div class="sectionlabel">Daten</div>
+    <button class="btn" id="bulkdl">Alle Pokemon laden (PokeAPI)</button>
+    <div class="progress" id="dlprog"><i></i></div>
+    <div class="hint" id="dlinfo" style="display:none"></div>
+    <button class="btn" id="clearsprites">Vorschaubilder leeren</button>
+    <button class="btn" id="clearall">Kompletten Cache leeren</button>
+  </aside>
+
+  <section class="panel" id="teampanel">
+    <div class="row" style="justify-content:space-between">
+      <div class="sectionlabel" style="margin:0">Aktuelles Team · <span id="teamcount">0</span>/6</div>
+      <button class="iconbtn" id="clearteam">Leeren</button>
+    </div>
+    <div id="teamcards" style="margin-top:10px"></div>
+  </section>
+
+  <section class="panel" id="analysis">
+    <div class="tabs" id="tabbar">
+      <button data-tab="overview" class="active">Übersicht</button>
+      <button data-tab="table">Tabelle</button>
+      <button data-tab="plots">Plots</button>
+      <button data-tab="sync">3DS Sync</button>
+    </div>
+    <div id="tab-overview"></div>
+    <div id="tab-table" style="display:none"></div>
+    <div id="tab-plots" style="display:none"></div>
+
+    <div id="tab-sync" style="display:none">
+      <details>
+        <summary>❓ Wie funktioniert der Sync?</summary>
+        <div class="inner">
+          Auf dem 3DS läuft <b>ftpd</b> – damit erreicht die App die SD-Karte
+          über WLAN.<br><br>
+          <b>DS-Spiele</b> (Platin bis Weiss 2): Der Spielstand ist eine normale
+          .sav-Datei (TWiLight Menu++) und wird direkt mit melonDS abgeglichen –
+          vollautomatisch.<br><br>
+          <b>3DS-Spiele</b> (X/Y bis Ultra Mond): Der Spielstand liegt
+          verschlüsselt in der Konsole. <b>Checkpoint</b> exportiert ihn als
+          Datei auf die SD-Karte. Vor dem Sync: in Checkpoint ein Backup machen.
+          Nach einem Sync Richtung 3DS: das neue „PCSYNC_…“-Backup in
+          Checkpoint wiederherstellen.<br><br>
+          Es gewinnt immer der <b>neuere</b> Spielstand; die andere Seite wird
+          vorher automatisch gesichert – es geht nie etwas verloren.
+        </div>
+      </details>
+
+      <div class="card steps">
+        <div class="step">
+          <div class="head">1 · Mit dem 3DS verbinden <span class="statusdot" id="conndot">● nicht verbunden</span></div>
+          <div class="row">
+            <input type="text" id="ftphost" placeholder="IP, z.B. 192.168.1.42" style="flex:2">
+            <input type="number" id="ftpport" value="5000" style="flex:1">
+            <button class="btn" id="conntest" style="width:auto;flex:1">Verbinden</button>
+          </div>
+          <div class="hint">Auf dem 3DS „ftpd“ starten – die IP steht oben am Bildschirm.</div>
+        </div>
+      </div>
+
+      <div class="card steps">
+        <div class="step">
+          <div class="head">2 · Spiel wählen</div>
+          <div class="row">
+            <select id="gamesel" style="flex:2"></select>
+            <button class="btn" id="setupgame" style="width:auto;flex:1">Einrichten…</button>
+          </div>
+          <div class="hint" id="gamestatus"></div>
+        </div>
+      </div>
+
+      <div class="card steps">
+        <div class="step">
+          <div class="head">3 · Synchronisieren</div>
+          <button class="btn primary" id="syncbtn">⟳&nbsp; Jetzt synchronisieren</button>
+          <div class="hint">Der neuere Spielstand gewinnt – die andere Seite wird vorher gesichert.</div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn" id="sync3ds" style="margin-top:0">Nur 3DS → PC</button>
+            <button class="btn" id="syncpc" style="margin-top:0">Nur PC → 3DS</button>
+          </div>
+        </div>
+      </div>
+
+      <details>
+        <summary>Erweitert: Cloud-Ordner &amp; Sync ohne 3DS</summary>
+        <div class="inner">
+          <label>Cloud-Ordner (Google Drive / Dropbox – synchronisiert mehrere PCs)</label>
+          <div class="row">
+            <input type="text" id="clouddir" placeholder="(kein Cloud-Ordner)">
+            <button class="btn" id="pickcloud" style="width:auto">Wählen…</button>
+          </div>
+          <label class="checkrow" style="margin-top:10px">
+            <input type="checkbox" id="noftp"> Ohne 3DS syncen (nur PC ↔ Cloud)</label>
+        </div>
+      </details>
+
+      <div class="sectionlabel">Protokoll</div>
+      <div class="log" id="synclog">Bereit.</div>
+    </div>
+  </section>
+</main>
+
+<div class="overlay" id="setupoverlay">
+  <div class="modal">
+    <h3 id="setuptitle">Einrichten</h3>
+    <div class="hint" id="setuphint1"></div>
+    <label>Save-Datei am PC</label>
+    <div class="row">
+      <input type="text" id="localpath">
+      <button class="btn" id="picklocal" style="width:auto">Datei…</button>
+      <button class="btn" id="autolocal" style="width:auto;display:none">Auto</button>
+    </div>
+    <div class="hint" id="setuphint2"></div>
+    <label>Pfad auf dem 3DS</label>
+    <div class="row">
+      <input type="text" id="remotepath" placeholder="(automatisch bei 3DS-Spielen)">
+      <button class="btn" id="browseremote" style="width:auto">3DS durchsuchen…</button>
+    </div>
+    <div class="browser" id="ftpbrowser" style="display:none"></div>
+    <div class="row" style="margin-top:16px;justify-content:flex-end">
+      <button class="btn" id="setupcancel" style="width:auto">Abbrechen</button>
+      <button class="btn primary" id="setupsave" style="width:auto">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const TYPE_COLORS = {normal:"#A8A77A",fire:"#EE8130",water:"#6390F0",
+  electric:"#E3B70A",grass:"#7AC74C",ice:"#69c6c2",fighting:"#C22E28",
+  poison:"#A33EA1",ground:"#cfa54a",flying:"#A98FF3",psychic:"#F95587",
+  bug:"#A6B91A",rock:"#B6A136",ghost:"#735797",dragon:"#6F35FC",
+  dark:"#705746",steel:"#8f8fb3",fairy:"#D685AD"};
+const TYPE_DE = {normal:"Normal",fire:"Feuer",water:"Wasser",
+  electric:"Elektro",grass:"Pflanze",ice:"Eis",fighting:"Kampf",
+  poison:"Gift",ground:"Boden",flying:"Flug",psychic:"Psycho",
+  bug:"Käfer",rock:"Gestein",ghost:"Geist",dragon:"Drache",
+  dark:"Unlicht",steel:"Stahl",fairy:"Fee"};
+const STAT_ORDER = ["hp","attack","defense","special-attack","special-defense","speed"];
+const STAT_DE = {"hp":"KP","attack":"Angr.","defense":"Vert.",
+  "special-attack":"Sp.A","special-defense":"Sp.V","speed":"Init."};
+
+let api = null, artworkCache = {}, currentGameKey = null, browsePath = "/";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 3200);
+}
+function badge(t) {
+  return `<span class="badge" style="background:${TYPE_COLORS[t]||"#777"}">${TYPE_DE[t]||t}</span>`;
+}
+
+function initTheme() {
+  const saved = localStorage.getItem("theme");
+  const dark = saved ? saved === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}
+$("themebtn").onclick = () => {
+  const el = document.documentElement;
+  el.dataset.theme = el.dataset.theme === "dark" ? "light" : "dark";
+  localStorage.setItem("theme", el.dataset.theme);
+};
+
+async function refreshList() {
+  const q = $("search").value.trim();
+  const res = await api.search_pokemon(q, 60);
+  $("listinfo").textContent = `· ${res.total}`;
+  $("pokelist").innerHTML = res.items.map(p => `
+    <div class="pokerow">
+      ${p.sprite ? `<img src="${p.sprite}" alt="">` : `<span style="width:30px"></span>`}
+      <span class="nm">${esc(p.display)}</span>
+      <span class="tp">${p.types.map(t => TYPE_DE[t]||t).join("/")}</span>
+      <button onclick="addPokemon('${esc(p.name)}')">+</button>
+    </div>`).join("") || `<div class="hint">Keine Treffer.</div>`;
+}
+
+async function addPokemon(name) {
+  const res = await api.add_pokemon(name);
+  if (!res.ok) return toast(res.error);
+  toast(`${res.added} hinzugefügt`);
+  renderTeam(res.team); refreshAnalysis();
+}
+async function removePokemon(name) {
+  const res = await api.remove_pokemon(name);
+  if (!res.ok) return toast(res.error);
+  renderTeam(res.team); refreshAnalysis();
+}
+
+function statBars(p) {
+  const color = TYPE_COLORS[p.types[0]] || "#888";
+  return `<div class="statbars">` + STAT_ORDER.map(s => {
+    const v = p.stats[s] || 0;
+    const w = Math.min(100, Math.round(v / 1.6));
+    return `<div class="bar" title="${STAT_DE[s]}: ${v}">
+      <i style="width:${w}%;background:${color}"></i></div>`;
+  }).join("") + `</div>`;
+}
+
+async function renderTeam(team) {
+  $("teamcount").textContent = team.length;
+  let html = team.map(p => `
+    <div class="card teamcard" id="card-${p.id}">
+      <img id="art-${p.id}" alt="" src="">
+      <div class="body">
+        <div class="titleline"><span class="n">${esc(p.display)}</span>
+          <span class="i">#${p.id}</span><span class="t">${p.total}</span></div>
+        <div style="margin-top:4px">${p.types.map(badge).join("")}</div>
+        ${statBars(p)}
+      </div>
+      <button class="removebtn" onclick="removePokemon('${esc(p.name)}')">✕</button>
+    </div>`).join("");
+  for (let i = team.length; i < 6; i++)
+    html += `<div class="emptyslot">+ Slot frei</div>`;
+  $("teamcards").innerHTML = html;
+  for (const p of team) {
+    if (!artworkCache[p.id])
+      artworkCache[p.id] = await api.get_artwork(p.id);
+    const img = $("art-" + p.id);
+    if (img && artworkCache[p.id]) img.src = artworkCache[p.id];
+  }
+}
+
+let activeTab = "overview";
+$("tabbar").querySelectorAll("button").forEach(b => b.onclick = () => {
+  activeTab = b.dataset.tab;
+  $("tabbar").querySelectorAll("button").forEach(x =>
+    x.classList.toggle("active", x === b));
+  ["overview","table","plots","sync"].forEach(t =>
+    $("tab-" + t).style.display = t === activeTab ? "" : "none");
+  if (activeTab !== "sync") refreshAnalysis();
+});
+
+async function refreshAnalysis() {
+  const a = await api.get_analysis();
+  renderOverview(a); renderTable(a); renderPlots(a);
+}
+
+function emptyHint(el) {
+  el.innerHTML = `<div class="hint" style="padding:30px;text-align:center">
+    Füge zuerst Pokemon zum Team hinzu.</div>`;
+}
+
+function renderOverview(a) {
+  const el = $("tab-overview");
+  if (a.empty) return emptyHint(el);
+  const open = a.weaknesses.filter(w => w.count > 0).length;
+  let html = `<div class="metrics">
+    <div class="metric"><div class="l">Teamgrösse</div><div class="v">${a.team_size}/6</div></div>
+    <div class="metric"><div class="l">Ø Total-Stats</div><div class="v">${Math.round(a.avg_total)}</div></div>
+    <div class="metric"><div class="l">Offene Schwächen</div><div class="v">${open}</div></div>
+  </div><div class="sectionlabel">Grösste Schwächen</div>`;
+  const top = a.weaknesses.slice(0, 8);
+  if (!top.length) html += `<div class="hint">Keine nennenswerten Schwächen – stark!</div>`;
+  for (const w of top) {
+    const pct = Math.round(100 * w.count / a.team_size);
+    const col = pct >= 50 ? "var(--err)" : pct >= 34 ? "var(--warn)" : "var(--ok)";
+    html += `<div class="weakrow">${badge(w.type)}
+      <div class="track"><i style="width:${pct}%;background:${col}"></i></div>
+      <span class="c">${w.count}×</span></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderTable(a) {
+  const el = $("tab-table");
+  if (a.empty) return emptyHint(el);
+  let html = `<table><tr><th>Pokemon</th><th>Typen</th>`
+    + STAT_ORDER.map(s => `<th>${STAT_DE[s]}</th>`).join("")
+    + `<th>Total</th></tr>`;
+  for (const m of a.members) {
+    html += `<tr><td><b>${esc(m.display)}</b></td>
+      <td>${m.types.map(badge).join("")}</td>`
+      + STAT_ORDER.map(s => `<td>${m.stats[s]}</td>`).join("")
+      + `<td><b>${m.total}</b></td></tr>`;
+  }
+  el.innerHTML = html + `</table>`;
+}
+
+function renderPlots(a) {
+  const el = $("tab-plots");
+  if (a.empty) return emptyHint(el);
+  let html = `<div class="sectionlabel">Total-Stats pro Pokemon</div>`;
+  const sorted = [...a.members].sort((x, y) => y.total - x.total);
+  for (const m of sorted) {
+    const pct = Math.round(100 * m.total / 720);
+    html += `<div class="weakrow">
+      <span style="min-width:110px;font-size:13px">${esc(m.display)}</span>
+      <div class="track"><i style="width:${pct}%;background:${TYPE_COLORS[m.types[0]]||"#888"}"></i></div>
+      <span class="c">${m.total}</span></div>`;
+  }
+  html += `<div class="sectionlabel" style="margin-top:18px">Typ-Effektivität gegen das Team</div>
+    <div class="hint" style="margin-bottom:8px">Zeile = Teammitglied, Spalte = Angriffstyp. Rot = anfällig, Grün = resistent.</div>`;
+  const types = Object.keys(TYPE_DE);
+  html += `<div class="hm" style="grid-template-columns:90px repeat(${types.length},1fr)">`;
+  html += `<div></div>` + types.map(t =>
+    `<div title="${TYPE_DE[t]}" style="color:var(--muted)">${TYPE_DE[t].slice(0,3)}</div>`).join("");
+  for (const row of a.coverage_matrix) {
+    html += `<div style="text-align:left;color:var(--muted)">${esc(row.display)}</div>`;
+    for (const t of types) {
+      const m = row.mults[t];
+      const bg = m === 0 ? "#3b82f6" : m < 1 ? "#22c55e" : m === 1 ? "var(--surface2)"
+        : m === 2 ? "#f59e0b" : "#ef4444";
+      const fg = m === 1 ? "var(--muted)" : "#fff";
+      html += `<div style="background:${bg};color:${fg}">${m === 0.5 ? "½" : m === 0.25 ? "¼" : m}</div>`;
+    }
+  }
+  el.innerHTML = html + `</div>`;
+}
+
+async function loadSyncUI() {
+  const cfg = await api.get_sync_config();
+  $("ftphost").value = cfg.host; $("ftpport").value = cfg.port;
+  $("clouddir").value = cfg.cloud_dir;
+  $("gamesel").innerHTML = cfg.games.map(g =>
+    `<option value="${g.key}">${esc(g.title)} (${g.platform === "3ds" ? "3DS" : "NDS"})</option>`).join("");
+  window._games = cfg.games;
+  updateGameStatus();
+}
+function gameByKey(k) { return (window._games || []).find(g => g.key === k); }
+function updateGameStatus() {
+  const g = gameByKey($("gamesel").value);
+  if (!g) return;
+  const pc = g.local_path ? "PC-Save ✓" : "PC-Save fehlt – „Einrichten…“";
+  const ds = g.remote_path ? "3DS-Pfad ✓"
+    : (g.platform === "3ds" ? "3DS-Pfad: automatisch (vorher in Checkpoint 1× Backup machen)"
+                            : "3DS-Pfad fehlt – „Einrichten…“");
+  $("gamestatus").textContent = pc + "  ·  " + ds;
+}
+$("gamesel").onchange = updateGameStatus;
+
+async function saveConn() {
+  return api.save_sync_settings($("ftphost").value,
+    parseInt($("ftpport").value || "5000"), $("clouddir").value);
+}
+$("conntest").onclick = async () => {
+  await saveConn();
+  $("conndot").textContent = "● verbinde …"; $("conndot").style.color = "var(--warn)";
+  const res = await api.test_connection();
+  if (res.ok) { $("conndot").textContent = "● verbunden ✓"; $("conndot").style.color = "var(--ok)"; }
+  else { $("conndot").textContent = "● keine Verbindung"; $("conndot").style.color = "var(--err)"; toast(res.error); }
+};
+
+$("setupgame").onclick = async () => {
+  const g = gameByKey($("gamesel").value);
+  currentGameKey = g.key;
+  $("setuptitle").textContent = "Einrichten: " + g.title;
+  $("localpath").value = g.local_path.replace(/^\(auto\) /, "");
+  $("remotepath").value = g.remote_path;
+  $("autolocal").style.display = g.platform === "3ds" ? "" : "none";
+  $("setuphint1").textContent = g.platform === "3ds"
+    ? "Azahar-Save („main“) – „Auto“ findet ihn selbst, sobald das Spiel im Emulator einmal gespeichert hat."
+    : "Die .sav-Datei von melonDS (liegt standardmässig neben dem ROM).";
+  $("setuphint2").textContent = g.platform === "3ds"
+    ? "Wird automatisch im Checkpoint-Ordner gesucht – nur anpassen, wenn nötig."
+    : "Die .sav auf der SD-Karte, z.B. /roms/nds/saves/Spiel.sav.";
+  $("ftpbrowser").style.display = "none";
+  $("setupoverlay").classList.add("open");
+};
+$("setupcancel").onclick = () => $("setupoverlay").classList.remove("open");
+$("setupsave").onclick = async () => {
+  await api.save_game_paths(currentGameKey, $("localpath").value, $("remotepath").value);
+  $("setupoverlay").classList.remove("open");
+  await loadSyncUI(); toast("Gespeichert");
+};
+$("picklocal").onclick = async () => {
+  const res = await api.pick_file();
+  if (res.ok) $("localpath").value = res.path;
+};
+$("autolocal").onclick = async () => {
+  const res = await api.detect_azahar_save(currentGameKey);
+  res.ok ? $("localpath").value = res.path : toast(res.error);
+};
+$("pickcloud").onclick = async () => {
+  const res = await api.pick_folder();
+  if (res.ok) { $("clouddir").value = res.path; await saveConn(); }
+};
+
+$("browseremote").onclick = async () => { await saveConn(); browseFtp("/"); };
+async function browseFtp(path) {
+  const res = await api.ftp_list(path);
+  if (!res.ok) return toast(res.error);
+  browsePath = path;
+  const el = $("ftpbrowser"); el.style.display = "";
+  let html = `<div style="color:var(--muted)">${esc(path)}</div>`;
+  if (path !== "/") {
+    const parent = path.replace(/\/[^/]+$/, "") || "/";
+    html += `<div onclick="browseFtp('${esc(parent)}')">[..]</div>`;
+  }
+  for (const e of res.entries) {
+    const full = (path === "/" ? "" : path) + "/" + e.name;
+    html += e.dir
+      ? `<div onclick="browseFtp('${esc(full)}')">[${esc(e.name)}]</div>`
+      : `<div onclick="pickRemote('${esc(full)}')">${esc(e.name)}</div>`;
+  }
+  el.innerHTML = html;
+}
+function pickRemote(path) {
+  $("remotepath").value = path;
+  $("ftpbrowser").style.display = "none";
+}
+
+function syncLog(lines) {
+  $("synclog").textContent = lines.join("\n") || "Bereit.";
+  $("synclog").scrollTop = 99999;
+}
+async function doSync(force) {
+  await saveConn();
+  const useFtp = !$("noftp").checked;
+  const key = $("gamesel").value;
+  const g = gameByKey(key);
+  $("syncbtn").textContent = "Synchronisiere …"; $("syncbtn").disabled = true;
+  const res = await api.run_sync(key, force, useFtp);
+  $("syncbtn").textContent = "⟳  Jetzt synchronisieren"; $("syncbtn").disabled = false;
+  const lines = res.log || [];
+  if (!res.ok) { lines.push("FEHLER: " + res.error); syncLog(lines); return toast(res.error); }
+  lines.push(...(res.messages || []));
+  if (res.skipped) lines.push("Nichts zu tun – alles aktuell.");
+  else lines.push(`Fertig. Neuester Stand: ${res.winner}; aktualisiert: ${(res.updated||[]).join(", ") || "nichts"}; Backups: ${(res.backed_up||[]).join(", ") || "keine"}.`);
+  if (res.needs_checkpoint_restore) {
+    lines.push("WICHTIG: Auf dem 3DS Checkpoint öffnen und das neue PCSYNC_…-Backup wiederherstellen.");
+    toast("Fast fertig: PCSYNC-Backup in Checkpoint wiederherstellen!");
+  } else toast(res.skipped ? "Alles aktuell" : "Sync fertig");
+  syncLog(lines);
+  await loadSyncUI();
+}
+$("syncbtn").onclick = () => doSync(null);
+$("sync3ds").onclick = () => doSync("3DS");
+$("syncpc").onclick = () => doSync("PC");
+
+$("loadpreset").onclick = async () => {
+  const res = await api.load_preset_team($("preset").value);
+  if (!res.ok) return toast(res.error);
+  renderTeam(res.team); refreshAnalysis();
+};
+$("autofill").onclick = async () => {
+  const v = $("genfilter").value;
+  let mode = "all", gen = 0;
+  if (v.startsWith("max:")) { mode = "max"; gen = +v.slice(4); }
+  if (v.startsWith("exact:")) { mode = "exact"; gen = +v.slice(6); }
+  const res = await api.auto_complete(mode, gen, $("legendary").checked);
+  if (!res.ok) return toast(res.error);
+  renderTeam(res.team); refreshAnalysis();
+  toast("Team aufgefüllt – nochmal klicken nach Leeren ergibt eine neue Variante");
+};
+$("clearteam").onclick = async () => {
+  const res = await api.clear_team();
+  renderTeam(res.team); refreshAnalysis();
+};
+$("clearsprites").onclick = async () => {
+  const res = await api.clear_sprites();
+  artworkCache = {};
+  toast(`${res.removed} Bilder gelöscht – werden bei Bedarf neu geladen`);
+  refreshList(); renderTeam(await api.get_team());
+};
+$("clearall").onclick = async () => {
+  if (!confirm("Pokemon-Daten UND Bilder löschen? Die Liste ist danach leer, bis neu geladen wird.")) return;
+  const res = await api.clear_all_cache();
+  artworkCache = {};
+  toast(`Cache geleert (${res.data} Datensätze, ${res.sprites} Bilder)`);
+  refreshList();
+};
+
+$("bulkdl").onclick = async () => {
+  if (!confirm("Lädt ca. 1000 Pokemon von der PokeAPI (20–60 Sekunden). Fortfahren?")) return;
+  const res = await api.start_bulk_download();
+  if (!res.ok) return toast(res.error);
+  $("dlprog").style.display = "block"; $("dlinfo").style.display = "block";
+  const timer = setInterval(async () => {
+    const p = await api.get_download_progress();
+    if (p.total) {
+      $("dlprog").firstElementChild.style.width =
+        Math.round(100 * p.done / p.total) + "%";
+      $("dlinfo").textContent = `${p.done}/${p.total} – ${p.name || ""}`;
+    }
+    if (!p.running) {
+      clearInterval(timer);
+      $("dlprog").style.display = "none"; $("dlinfo").style.display = "none";
+      toast(p.error ? "Fehler: " + p.error
+        : `Download fertig: ${p.success}/${p.total} Pokemon`);
+      refreshList();
+    }
+  }, 300);
+};
+
+let searchTimer = null;
+$("search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(refreshList, 200);
+});
+$("search").addEventListener("keydown", async (e) => {
+  if (e.key === "Enter" && $("search").value.trim()) {
+    await addPokemon($("search").value.trim());
+    $("search").value = ""; refreshList();
+  }
+});
+
+async function init() {
+  api = window.pywebview.api;
+  initTheme();
+  const presets = await api.list_presets();
+  $("preset").innerHTML = presets.map(p => `<option>${esc(p)}</option>`).join("");
+  const gens = await api.generation_options();
+  $("genfilter").innerHTML = `<option value="all">Alle Generationen</option>`
+    + gens.map(g => `<option value="max:${g}">Bis Gen ${g}</option>`).join("")
+    + gens.map(g => `<option value="exact:${g}">Nur Gen ${g}</option>`).join("");
+  await refreshList();
+  renderTeam(await api.get_team());
+  await refreshAnalysis();
+  await loadSyncUI();
+}
+window.addEventListener("pywebviewready", init);
+initTheme();
+</script>
+</body>
+</html>

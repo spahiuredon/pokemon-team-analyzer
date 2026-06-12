@@ -1,13 +1,10 @@
-"""Einstiegspunkt für die gepackte App (PyInstaller).
+"""Einstiegspunkt der App (pywebview-Web-GUI).
 
-PyInstaller kommt mit einem Top-Level-Skript besser zurecht als mit
-``python -m src.gui``. Für die Entwicklung funktioniert weiterhin beides:
-
-    python app.py
-    python -m src.gui
+    python app.py            startet das moderne Web-GUI
+    python -m src.gui        startet das alte Tkinter-GUI (Legacy)
 """
 
-from src.gui import main
+from src.webgui import start
 
 if __name__ == "__main__":
-    main()
+    start()
