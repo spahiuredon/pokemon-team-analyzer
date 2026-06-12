@@ -162,6 +162,41 @@ class PokeAPIClient:
         return data
 
     # ------------------------------------------------------------------ #
+    # Cache-Verwaltung
+    # ------------------------------------------------------------------ #
+    def clear_sprites(self) -> int:
+        """Löscht alle gespeicherten Vorschaubilder (Sprites).
+
+        Nützlich, wenn einzelne Bilder defekt oder nie richtig geladen
+        worden sind - beim nächsten Anzeigen werden sie frisch von der
+        PokeAPI heruntergeladen. Gibt die Anzahl gelöschter Dateien zurück.
+        """
+        removed = 0
+        for sprite in self.sprite_dir.glob("*.png"):
+            try:
+                sprite.unlink()
+                removed += 1
+            except OSError:
+                pass  # gesperrte/defekte Datei überspringen
+        return removed
+
+    def clear_pokemon_cache(self) -> int:
+        """Löscht alle gecachten Pokemon-Daten (JSON).
+
+        Achtung: danach ist die Pokemon-Liste leer, bis die Daten neu
+        geladen werden (einzeln bei Bedarf oder über den Bulk-Download).
+        Gibt die Anzahl gelöschter Dateien zurück.
+        """
+        removed = 0
+        for cache_file in self.cache_dir.glob("*.json"):
+            try:
+                cache_file.unlink()
+                removed += 1
+            except OSError:
+                pass
+        return removed
+
+    # ------------------------------------------------------------------ #
     # Interne Helfer
     # ------------------------------------------------------------------ #
     def _fetch_json(self, endpoint: str, cache_name: str | None = None) -> dict[str, Any]:

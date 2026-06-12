@@ -102,5 +102,42 @@ class PruneCacheTests(unittest.TestCase):
             ])
 
 
+class CacheClearingTests(unittest.TestCase):
+    """clear_sprites() und clear_pokemon_cache()."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.client = PokeAPIClient(cache_dir=base / "cache",
+                                    sprite_dir=base / "sprites")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_clear_sprites_removes_only_pngs(self):
+        (self.client.sprite_dir / "1.png").write_bytes(b"img")
+        (self.client.sprite_dir / "2.png").write_bytes(b"img")
+        (self.client.cache_dir / "pokemon_pikachu.json").write_text("{}")
+        removed = self.client.clear_sprites()
+        self.assertEqual(removed, 2)
+        self.assertEqual(list(self.client.sprite_dir.glob("*.png")), [])
+        # Daten-Cache bleibt unangetastet
+        self.assertTrue((self.client.cache_dir / "pokemon_pikachu.json").exists())
+
+    def test_clear_pokemon_cache_removes_jsons(self):
+        (self.client.cache_dir / "pokemon_pikachu.json").write_text("{}")
+        (self.client.cache_dir / "type_fire.json").write_text("{}")
+        (self.client.sprite_dir / "1.png").write_bytes(b"img")
+        removed = self.client.clear_pokemon_cache()
+        self.assertEqual(removed, 2)
+        self.assertEqual(list(self.client.cache_dir.glob("*.json")), [])
+        # Sprites bleiben unangetastet
+        self.assertTrue((self.client.sprite_dir / "1.png").exists())
+
+    def test_clear_on_empty_dirs_returns_zero(self):
+        self.assertEqual(self.client.clear_sprites(), 0)
+        self.assertEqual(self.client.clear_pokemon_cache(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

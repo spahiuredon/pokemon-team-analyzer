@@ -188,6 +188,11 @@ class PokemonTeamGUI:
                       text_color=TEXT_ON_TRANSPARENT,
                       command=self._download_all_pokemon).grid(
             row=7, column=0, sticky="ew")
+        ctk.CTkButton(bottom, text="Cache leeren...",
+                      fg_color="transparent", border_width=1,
+                      text_color=TEXT_ON_TRANSPARENT,
+                      command=self._clear_cache_dialog).grid(
+            row=8, column=0, sticky="ew", pady=(4, 0))
 
     # ------------------------------------------------------------------ #
     # Team-Panel (Mitte): Karten
@@ -683,6 +688,65 @@ class PokemonTeamGUI:
 
         threading.Thread(target=_worker, daemon=True).start()
         self.root.after(100, _poll)
+
+    # ------------------------------------------------------------------ #
+    # Cache leeren (Vorschaubilder / Pokemon-Daten)
+    # ------------------------------------------------------------------ #
+    def _clear_cache_dialog(self) -> None:
+        """Kleiner Dialog: nur Bilder leeren oder alles."""
+        win = ctk.CTkToplevel(self.root)
+        win.title("Cache leeren")
+        win.geometry("460x230")
+        win.transient(self.root)
+        win.grab_set()
+
+        ctk.CTkLabel(
+            win, wraplength=420, justify="left",
+            text=("Vorschaubilder leeren behebt defekte oder nie geladene "
+                  "Sprites - sie werden bei Bedarf automatisch neu von der "
+                  "PokeAPI geholt.\n\n"
+                  "Alles leeren entfernt zusätzlich die Pokemon-Daten: die "
+                  "Liste ist danach leer, bis du 'Alle Pokemon laden' "
+                  "ausführst (Internet nötig)."),
+        ).pack(padx=16, pady=(16, 10))
+
+        def clear_sprites() -> None:
+            removed = self.client.clear_sprites()
+            self._image_cache.clear()
+            win.destroy()
+            self._refresh_cache_view()
+            self._refresh_team_view()
+            self._set_status(
+                f"{removed} Vorschaubilder gelöscht - werden bei Bedarf "
+                "neu geladen.")
+
+        def clear_all() -> None:
+            if not messagebox.askyesno(
+                "Wirklich alles leeren?",
+                "Pokemon-Daten UND Bilder werden gelöscht. Die Liste ist "
+                "danach leer, bis neu geladen wird. Fortfahren?",
+                parent=win,
+            ):
+                return
+            sprites = self.client.clear_sprites()
+            data = self.client.clear_pokemon_cache()
+            self._image_cache.clear()
+            win.destroy()
+            self._populate_cached_pokemon()
+            self._refresh_team_view()
+            self._set_status(
+                f"Cache geleert ({data} Datensätze, {sprites} Bilder). "
+                "'Alle Pokemon laden' füllt die Liste neu.")
+
+        row = ctk.CTkFrame(win, fg_color="transparent")
+        row.pack(pady=(0, 14))
+        ctk.CTkButton(row, text="Nur Vorschaubilder leeren",
+                      command=clear_sprites).pack(side="left", padx=4)
+        ctk.CTkButton(row, text="Alles leeren",
+                      fg_color="transparent", border_width=1,
+                      text_color=TEXT_ON_TRANSPARENT,
+                      hover_color=("#fca5a5", "#7f1d1d"),
+                      command=clear_all).pack(side="left", padx=4)
 
     def _set_status(self, msg: str) -> None:
         self.status_var.set(msg)
