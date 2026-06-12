@@ -1,17 +1,16 @@
 # Pokémon Team-Analyzer
 
-**PROG2 FS26 - Semesterprojekt**
-Autor: Redon
+Desktop-App zum Zusammenstellen und Analysieren von Pokemon-Teams -
+mit eingebauter Save-Synchronisation zwischen einem gemoddeten 3DS
+und PC-Emulatoren.
 
-## Projektbeschreibung
-
-Der Pokémon Team-Analyzer lädt Pokemon-Daten von der öffentlichen
+Die App lädt Pokemon-Daten von der öffentlichen
 [PokeAPI](https://pokeapi.co/), packt sie in ein
-benutzerdefiniertes Team, und analysiert die Stärken und
-Schwächen des Teams mit Pandas und matplotlib. Insbesondere
-berechnet er die Typ-Coverage (welche Angriffstypen sind für das
-Team gefährlich) und visualisiert die Base-Stats der
-Teammitglieder.
+benutzerdefiniertes Team und analysiert die Stärken und
+Schwächen des Teams: Typ-Coverage (welche Angriffstypen sind für
+das Team gefährlich), Base-Stats-Vergleiche und eine
+Typ-Effektivitäts-Heatmap. Das GUI ist mit CustomTkinter gebaut
+und folgt automatisch dem Hell-/Dunkelmodus des Systems.
 
 ## Installation
 
@@ -27,20 +26,20 @@ pip install -r requirements.txt
 
 ## Ausführen
 
-### GUI starten (empfohlen für die Live-Demo)
+### GUI starten
 
 ```bash
 python -m src.gui
 ```
 
-Es öffnet sich ein Fenster: links Team-Verwaltung (Pokemon
-hinzufügen per Eingabe oder Doppelklick auf die Cache-Liste,
-vorgefertigte Champion-Teams aus mehreren Generationen,
-Entfernen, Leeren), in der Mitte das aktuelle Team mit Sprites,
-rechts Tabs für Tabellen und eingebettete matplotlib-Plots
-(Stats, Typ-Coverage, Heatmap). Tkinter kommt mit Python (auf
-macOS und Windows von Haus aus, unter Linux mit
-`apt install python3-tk`).
+Es öffnet sich ein Fenster: links die Sidebar mit Suche,
+Pokemon-Liste, vorgefertigten Champion-Teams und
+Auto-Vervollständigung; in der Mitte das aktuelle Team als Karten
+mit Sprites und Typ-Badges; rechts Tabs für Stats-Tabelle,
+Typ-Coverage, Plots und den 3DS-Sync. Die Analyse-Tabs
+aktualisieren sich automatisch, sobald sich das Team ändert.
+Tkinter kommt mit Python (auf macOS und Windows von Haus aus,
+unter Linux mit `apt install python3-tk`).
 
 ### Demo-Notebook
 
@@ -82,7 +81,7 @@ python data/seed_cache.py
 | `src/sync_gui.py`      | Der "3DS Sync"-Tab im GUI: Verbindung, Spiel-Einrichtung mit FTP-Browser, Sync-Buttons, Protokoll. |
 | `src/app_paths.py`     | Frozen-aware Pfadlogik: die gepackte App (PyInstaller) nutzt `~/.pokemon_team_analyzer/data` statt des Programmordners. |
 | `tests/`               | 52 Unit-Tests, decken jede Klasse ab. Der API-Client wird mit `unittest.mock` getestet, die Sync-Engine mit In-Memory-Quellen - keine echten Netzwerk-Aufrufe nötig. |
-| `notebooks/demo.ipynb` | Demo, die alle Kompetenzen sichtbar macht. |
+| `notebooks/demo.ipynb` | Notebook mit einer Beispiel-Analyse. |
 | `data/seed_cache.py`   | Optional: legt bekannte Pokemon im Cache an, damit die Demo auch ohne Internet funktioniert. |
 
 ## Datenquelle
@@ -91,13 +90,6 @@ Alle Pokemon-Daten stammen aus der offiziellen
 [PokeAPI](https://pokeapi.co/) (frei, kein API-Key nötig). Die
 Typ-Effektivitätstabelle ist im Code hinterlegt (statisches Wissen
 aus den Spielen), um die Analyse unabhängig vom Netz zu machen.
-
-## Komplexität
-
-Die Hauptanalyse (`type_coverage`) iteriert einmal über alle
-Teammitglieder ($n \le 6$) und einmal über die 18 Typen
-(Konstante). Damit ist die Laufzeit $\mathcal{O}(n)$ - keine
-versteckten quadratischen Schleifen.
 
 ## Save-Sync: 3DS ↔ PC-Emulator
 

@@ -1,17 +1,12 @@
-"""Einfaches Tkinter-GUI für den Pokemon Team-Analyzer.
+"""Modernes GUI für den Pokemon Team-Analyzer (CustomTkinter).
 
-Bietet eine grafische Oberfläche, in der man:
-- Pokemon zum Team hinzufügt (Eingabefeld oder Auswahl aus Cache-Liste mit Bildchen)
-- Pokemon wieder entfernt
-- Die Stats-Tabelle (Pandas DataFrame) ansieht
-- Die Typ-Coverage anzeigen lässt
-- Drei Diagramme direkt im Fenster rendert (matplotlib eingebettet)
+Aufbau:
+- Links eine Sidebar: Suche + Pokemon-Liste, Hinzufügen, Presets,
+  Auto-Vervollständigung.
+- Mitte: das aktuelle Team als Karten (Sprite, Typ-Badges, Stats).
+- Rechts: Tab-Ansicht mit Tabelle, Typ-Coverage, Plots und 3DS-Sync.
 
-Sprites werden bevorzugt aus dem mitgelieferten Cache geladen
-(typ-gefärbte Platzhalter), bei Bedarf vom Server der PokeAPI nachgezogen.
-
-Tkinter ist Teil der Python-Standardbibliothek, also keine extra Installation.
-Pillow (PIL) wird für Bildverarbeitung benötigt (steht in requirements.txt).
+Das Farbschema folgt automatisch dem System (hell/dunkel).
 
 Aufruf:
     python -m src.gui
@@ -22,9 +17,9 @@ from __future__ import annotations
 import queue
 import threading
 import tkinter as tk
-from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 
+import customtkinter as ctk
 import matplotlib
 
 matplotlib.use("TkAgg")
@@ -32,70 +27,250 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
 
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image
     HAS_PIL = True
 except ImportError:  # pragma: no cover - GUI braucht Pillow ohnehin
     HAS_PIL = False
 
 from .analyzer import TeamAnalyzer
 from .api_client import PokeAPIClient, PokeAPIError
+from .app_paths import app_icon_path, data_dir
 from .pokemon import Pokemon
 from .presets import available_presets, load_preset
 from .team import Team
 from .team_completer import GENERATION_RANGES, TeamCompleter
 
-
-# Größe für Sprites in der Team-Übersicht und der Cache-Liste.
 SPRITE_SIZE = 64
+
+# Offizielle Typ-Farben für die Badges auf den Team-Karten.
+TYPE_COLORS: dict[str, str] = {
+    "normal": "#A8A77A", "fire": "#EE8130", "water": "#6390F0",
+    "electric": "#F7D02C", "grass": "#7AC74C", "ice": "#96D9D6",
+    "fighting": "#C22E28", "poison": "#A33EA1", "ground": "#E2BF65",
+    "flying": "#A98FF3", "psychic": "#F95587", "bug": "#A6B91A",
+    "rock": "#B6A136", "ghost": "#735797", "dragon": "#6F35FC",
+    "dark": "#705746", "steel": "#B7B7CE", "fairy": "#D685AD",
+}
+
+GERMAN_TYPES: dict[str, str] = {
+    "normal": "Normal", "fire": "Feuer", "water": "Wasser",
+    "electric": "Elektro", "grass": "Pflanze", "ice": "Eis",
+    "fighting": "Kampf", "poison": "Gift", "ground": "Boden",
+    "flying": "Flug", "psychic": "Psycho", "bug": "Käfer",
+    "rock": "Gestein", "ghost": "Geist", "dragon": "Drache",
+    "dark": "Unlicht", "steel": "Stahl", "fairy": "Fee",
+}
 
 
 class PokemonTeamGUI:
     """Hauptfenster der Anwendung."""
 
-    def __init__(self, root: tk.Tk) -> None:
+    CACHE_DISPLAY_LIMIT = 60
+
+    def __init__(self, root: ctk.CTk) -> None:
         self.root = root
         self.root.title("Pokemon Team-Analyzer")
-        self.root.geometry("1200x780")
+        self.root.geometry("1280x800")
+        self.root.minsize(1080, 680)
 
-        # Cache-Ordner: derselbe wie für das Notebook (data/cache).
-        # In der gepackten App (PyInstaller) zeigt data_dir() stattdessen
-        # auf einen beschreibbaren Ordner im Home-Verzeichnis.
-        from .app_paths import app_icon_path, data_dir
         self.client = PokeAPIClient(cache_dir=data_dir() / "cache",
                                     sprite_dir=data_dir() / "sprites")
-
-        # App-Icon (Pokeball) für Fenster und Dock setzen.
-        self._set_app_icon(app_icon_path())
         self.team = Team("Mein Team")
-        # Aktuell im rechten Bereich angezeigte matplotlib-Figur
+        self._selected_team_index: int | None = None
         self._current_canvas: FigureCanvasTkAgg | None = None
-        # Bilder dürfen NICHT vom Garbage Collector eingesammelt werden, sonst
-        # zeigt Tk nur leere Felder. Referenzen werden in diesem Dict gehalten.
-        self._photo_cache: dict[int, ImageTk.PhotoImage] = {}
+        self._image_cache: dict[tuple[int, int], ctk.CTkImage] = {}
+        self._cached_names: list[str] = []
 
-        # ttk-Stil aufhübschen
-        style = ttk.Style()
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass  # Fallback auf Default
-
+        self._set_app_icon()
         self._build_layout()
-        self._refresh_team_view()
         self._populate_cached_pokemon()
+        self._refresh_team_view()
 
-        # Aufräumen beim Schliessen: Photos und Tk-Variablen freigeben,
-        # bevor der Interpreter heruntergefahren wird. Das vermeidet
-        # "Tcl_AsyncDelete: async handler deleted by the wrong thread"
-        # und "main thread is not in main loop" beim Programmende.
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    # ------------------------------------------------------------------ #
+    # Grund-Layout
+    # ------------------------------------------------------------------ #
+    def _build_layout(self) -> None:
+        self.root.grid_columnconfigure(1, weight=0)
+        self.root.grid_columnconfigure(2, weight=1)
+        self.root.grid_rowconfigure(0, weight=1)
+
+        self._build_sidebar()
+        self._build_team_panel()
+        self._build_analysis_panel()
+        self._build_statusbar()
+
+    # ------------------------------------------------------------------ #
+    # Sidebar (links): Suche, Liste, Hinzufügen, Presets
+    # ------------------------------------------------------------------ #
+    def _build_sidebar(self) -> None:
+        sidebar = ctk.CTkFrame(self.root, width=290, corner_radius=0)
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+        sidebar.grid_rowconfigure(4, weight=1)
+        sidebar.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            sidebar, text="Pokemon\nTeam-Analyzer",
+            font=ctk.CTkFont(size=20, weight="bold"), justify="left",
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 8))
+
+        # Suche + direkte Eingabe
+        self.search_var = tk.StringVar()
+        search = ctk.CTkEntry(sidebar, textvariable=self.search_var,
+                              placeholder_text="Suchen oder Name eingeben...")
+        search.grid(row=1, column=0, sticky="ew", padx=16)
+        search.bind("<Return>", lambda _e: self._add_pokemon())
+        self.search_var.trace_add("write", lambda *_: self._refresh_cache_view())
+
+        ctk.CTkButton(sidebar, text="+  Zum Team hinzufügen",
+                      command=self._add_pokemon).grid(
+            row=2, column=0, sticky="ew", padx=16, pady=(8, 4))
+
+        self.cache_info = ctk.CTkLabel(sidebar, text="",
+                                       font=ctk.CTkFont(size=11),
+                                       text_color=("gray40", "gray60"))
+        self.cache_info.grid(row=3, column=0, sticky="w", padx=16)
+
+        # Scrollbare Pokemon-Liste
+        self.cache_list = ctk.CTkScrollableFrame(sidebar, label_text="")
+        self.cache_list.grid(row=4, column=0, sticky="nsew", padx=10, pady=4)
+        self.cache_list.grid_columnconfigure(0, weight=1)
+
+        # Presets
+        bottom = ctk.CTkFrame(sidebar, fg_color="transparent")
+        bottom.grid(row=5, column=0, sticky="ew", padx=16, pady=(4, 16))
+        bottom.grid_columnconfigure(0, weight=1)
+
+        presets = available_presets()
+        self.preset_var = tk.StringVar(value=presets[0] if presets else "")
+        ctk.CTkLabel(bottom, text="Vorgefertigtes Team",
+                     font=ctk.CTkFont(size=12, weight="bold")).grid(
+            row=0, column=0, sticky="w")
+        ctk.CTkOptionMenu(bottom, variable=self.preset_var,
+                          values=presets or ["-"]).grid(
+            row=1, column=0, sticky="ew", pady=(2, 4))
+        ctk.CTkButton(bottom, text="Team laden",
+                      command=self._load_preset).grid(
+            row=2, column=0, sticky="ew", pady=(0, 10))
+
+        ctk.CTkLabel(bottom, text="Auto-Vervollständigung",
+                     font=ctk.CTkFont(size=12, weight="bold")).grid(
+            row=3, column=0, sticky="w")
+        gen_values = ["Alle"] + [f"Gen {g}" for g in sorted(GENERATION_RANGES)]
+        self.gen_var = tk.StringVar(value="Alle")
+        ctk.CTkOptionMenu(bottom, variable=self.gen_var,
+                          values=gen_values).grid(
+            row=4, column=0, sticky="ew", pady=(2, 4))
+        ctk.CTkButton(bottom, text="Team auto-auffüllen",
+                      command=self._auto_complete).grid(
+            row=5, column=0, sticky="ew", pady=(0, 4))
+        ctk.CTkButton(bottom, text="Alle Pokemon laden (PokeAPI)",
+                      fg_color="transparent", border_width=1,
+                      command=self._download_all_pokemon).grid(
+            row=6, column=0, sticky="ew")
+
+    # ------------------------------------------------------------------ #
+    # Team-Panel (Mitte): Karten
+    # ------------------------------------------------------------------ #
+    def _build_team_panel(self) -> None:
+        panel = ctk.CTkFrame(self.root, width=320, fg_color="transparent")
+        panel.grid(row=0, column=1, sticky="nsew", padx=(12, 6), pady=12)
+        panel.grid_propagate(False)
+        panel.grid_rowconfigure(1, weight=1)
+        panel.grid_columnconfigure(0, weight=1)
+
+        header = ctk.CTkFrame(panel, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(header, text="Aktuelles Team",
+                     font=ctk.CTkFont(size=16, weight="bold")).grid(
+            row=0, column=0, sticky="w")
+        ctk.CTkButton(header, text="Leeren", width=70,
+                      fg_color="transparent", border_width=1,
+                      command=self._clear_team).grid(row=0, column=1)
+
+        self.team_frame = ctk.CTkScrollableFrame(panel, fg_color="transparent")
+        self.team_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        self.team_frame.grid_columnconfigure(0, weight=1)
+
+    # ------------------------------------------------------------------ #
+    # Analyse-Panel (rechts): Tabs
+    # ------------------------------------------------------------------ #
+    def _build_analysis_panel(self) -> None:
+        self.tabs = ctk.CTkTabview(self.root, command=self._on_tab_change)
+        self.tabs.grid(row=0, column=2, sticky="nsew", padx=(6, 12), pady=12)
+
+        self.tab_stats = self.tabs.add("Tabelle")
+        self.tab_coverage = self.tabs.add("Coverage")
+        self.tab_plots = self.tabs.add("Plots")
+        self.tab_sync = self.tabs.add("3DS Sync")
+
+        # Tabelle
+        self.stats_text = ctk.CTkTextbox(self.tab_stats,
+                                         font=ctk.CTkFont(family="Courier",
+                                                          size=12))
+        self.stats_text.pack(fill="both", expand=True)
+        self.stats_text.configure(state="disabled")
+
+        # Coverage
+        self.coverage_text = ctk.CTkTextbox(self.tab_coverage,
+                                            font=ctk.CTkFont(family="Courier",
+                                                             size=12))
+        self.coverage_text.pack(fill="both", expand=True)
+        self.coverage_text.configure(state="disabled")
+
+        # Plots: Auswahl oben, Zeichenfläche darunter
+        self.plot_choice = ctk.CTkSegmentedButton(
+            self.tab_plots,
+            values=["Gesamt-Stats", "Stats-Vergleich", "Typ-Heatmap"],
+            command=lambda _v: self._render_plot())
+        self.plot_choice.set("Gesamt-Stats")
+        self.plot_choice.pack(pady=(4, 8))
+        self.plot_area = ctk.CTkFrame(self.tab_plots, fg_color="transparent")
+        self.plot_area.pack(fill="both", expand=True)
+
+        # 3DS Sync (eigenes Modul)
+        from .sync_gui import SyncTab
+        self.sync_tab = SyncTab(self.root, self.tab_sync)
+
+    def _build_statusbar(self) -> None:
+        self.status_var = tk.StringVar(value="Bereit.")
+        bar = ctk.CTkLabel(self.root, textvariable=self.status_var,
+                           anchor="w", font=ctk.CTkFont(size=11),
+                           text_color=("gray30", "gray70"))
+        bar.grid(row=1, column=0, columnspan=3, sticky="ew", padx=14,
+                 pady=(0, 4))
+
+    # ------------------------------------------------------------------ #
+    # Icon & Aufräumen
+    # ------------------------------------------------------------------ #
+    def _set_app_icon(self) -> None:
+        icon = app_icon_path()
+        if icon.exists():
+            try:
+                self._icon_photo = tk.PhotoImage(file=str(icon))
+                self.root.iconphoto(True, self._icon_photo)
+            except (OSError, ValueError, tk.TclError):
+                pass
+        import sys as _sys
+        if _sys.platform == "darwin":
+            try:
+                from Foundation import NSBundle  # type: ignore
+                bundle = NSBundle.mainBundle()
+                if bundle is not None:
+                    info = (bundle.localizedInfoDictionary()
+                            or bundle.infoDictionary())
+                    if info is not None:
+                        info["CFBundleName"] = "Pokemon Team-Analyzer"
+                        info["CFBundleDisplayName"] = "Pokemon Team-Analyzer"
+            except ImportError:
+                pass
+
     def _on_close(self) -> None:
-        """Sauber herunterfahren - Photos zuerst löschen, dann Tk beenden."""
         try:
-            self._photo_cache.clear()
-            if getattr(self, "_app_icon_photo", None) is not None:
-                self._app_icon_photo = None
+            self._image_cache.clear()
         except Exception:
             pass
         try:
@@ -104,675 +279,373 @@ class PokemonTeamGUI:
             self.root.destroy()
 
     # ------------------------------------------------------------------ #
-    # Layout
+    # Sprites als CTkImage
     # ------------------------------------------------------------------ #
-    def _build_layout(self) -> None:
-        # Linke Spalte: Team-Verwaltung
-        left = ttk.Frame(self.root, padding=10)
-        left.pack(side=tk.LEFT, fill=tk.Y)
-
-        ttk.Label(left, text="Pokemon Team-Analyzer",
-                  font=("Helvetica", 14, "bold")).pack(pady=(0, 10))
-
-        # Eingabefeld
-        ttk.Label(left, text="Pokemon-Name (oder ID):").pack(anchor=tk.W)
-        self.name_var = tk.StringVar()
-        entry = ttk.Entry(left, textvariable=self.name_var, width=30)
-        entry.pack(fill=tk.X)
-        entry.bind("<Return>", lambda _e: self._add_pokemon())
-
-        ttk.Button(left, text="Zum Team hinzufügen",
-                   command=self._add_pokemon).pack(fill=tk.X, pady=(4, 10))
-
-        # Vorgefertigte Teams - Dropdown + Lade-Button
-        ttk.Label(left, text="Vorgefertigtes Team:").pack(anchor=tk.W)
-        self.preset_var = tk.StringVar()
-        preset_combo = ttk.Combobox(left, textvariable=self.preset_var,
-                                    values=available_presets(),
-                                    state="readonly")
-        preset_combo.pack(fill=tk.X)
-        # Default: erstes Preset selektieren, damit der Button sofort etwas tut
-        presets = available_presets()
-        if presets:
-            preset_combo.current(0)
-        ttk.Button(left, text="Team laden (ersetzt aktuelles)",
-                   command=self._load_preset).pack(fill=tk.X, pady=(4, 10))
-
-        # Auto-Vervollständigung
-        ttk.Label(left, text="Auto-Vervollständigung bis Gen:").pack(anchor=tk.W)
-        # Werte: "Alle" + Gen-Nummern
-        gen_values = ["Alle"] + [f"Gen {g}" for g in sorted(GENERATION_RANGES)]
-        self.gen_var = tk.StringVar(value="Alle")
-        gen_combo = ttk.Combobox(left, textvariable=self.gen_var,
-                                 values=gen_values, state="readonly")
-        gen_combo.pack(fill=tk.X)
-        ttk.Button(left, text="Team auto-auffüllen",
-                   command=self._auto_complete).pack(fill=tk.X, pady=(4, 4))
-        ttk.Button(left, text="Alle Pokemon laden (PokeAPI)",
-                   command=self._download_all_pokemon).pack(fill=tk.X, pady=(0, 10))
-
-        # Cache-Liste mit Sprites: Treeview mit Bild + Name
-        ttk.Label(left, text="Verfügbar (Doppelklick fügt hinzu):").pack(anchor=tk.W)
-        # Suchfeld - filtert die Cache-Liste live nach Namen.
-        self.cache_search_var = tk.StringVar()
-        search_entry = ttk.Entry(left, textvariable=self.cache_search_var)
-        search_entry.pack(fill=tk.X)
-        # `trace_add("write", ...)` ruft die Filter-Funktion bei jedem Tastendruck.
-        self.cache_search_var.trace_add("write", lambda *_: self._refresh_cache_view())
-        # Hinweistext mit Trefferanzahl
-        self.cache_info_var = tk.StringVar(value="")
-        ttk.Label(left, textvariable=self.cache_info_var,
-                  foreground="#666666").pack(anchor=tk.W)
-        cache_frame = ttk.Frame(left)
-        cache_frame.pack(fill=tk.BOTH, expand=False)
-        self.cache_tree = ttk.Treeview(cache_frame, columns=("types",),
-                                       show="tree headings", height=8)
-        self.cache_tree.heading("#0", text="Pokemon")
-        self.cache_tree.heading("types", text="Typ(en)")
-        self.cache_tree.column("#0", width=200, anchor=tk.W)
-        self.cache_tree.column("types", width=120, anchor=tk.W)
-        cache_scroll = ttk.Scrollbar(cache_frame, orient=tk.VERTICAL,
-                                     command=self.cache_tree.yview)
-        self.cache_tree.configure(yscrollcommand=cache_scroll.set)
-        self.cache_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        cache_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.cache_tree.bind("<Double-Button-1>", lambda _e: self._add_from_cache())
-
-        ttk.Separator(left, orient="horizontal").pack(fill=tk.X, pady=10)
-
-        # Aktionen
-        ttk.Label(left, text="Analyse:").pack(anchor=tk.W)
-        ttk.Button(left, text="Stats-Tabelle",
-                   command=self._show_stats).pack(fill=tk.X, pady=2)
-        ttk.Button(left, text="Typ-Coverage",
-                   command=self._show_coverage).pack(fill=tk.X, pady=2)
-        ttk.Button(left, text="Plot: Gesamt-Stats",
-                   command=self._plot_totals).pack(fill=tk.X, pady=2)
-        ttk.Button(left, text="Plot: Stats-Vergleich",
-                   command=self._plot_stats).pack(fill=tk.X, pady=2)
-        ttk.Button(left, text="Plot: Typ-Heatmap",
-                   command=self._plot_heatmap).pack(fill=tk.X, pady=2)
-
-        # Mitte: Team-Übersicht mit Sprites
-        middle = ttk.LabelFrame(self.root, text="Aktuelles Team",
-                                padding=10)
-        middle.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 0), pady=10)
-        self.team_inner = ttk.Frame(middle)
-        self.team_inner.pack(fill=tk.BOTH, expand=True)
-        # Buttons unter dem Team
-        team_buttons = ttk.Frame(middle)
-        team_buttons.pack(fill=tk.X, pady=(8, 0))
-        ttk.Button(team_buttons, text="Ausgewähltes entfernen",
-                   command=self._remove_selected).pack(side=tk.LEFT, padx=2)
-        ttk.Button(team_buttons, text="Team leeren",
-                   command=self._clear_team).pack(side=tk.LEFT, padx=2)
-
-        # Aktuell selektiertes Team-Mitglied (über Klick gesetzt)
-        self._selected_team_index: int | None = None
-
-        # Rechte Spalte: Ausgabe
-        right = ttk.Frame(self.root, padding=10)
-        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        self.output_frame = right
-
-        # Notebook-Widget für Tabs: "Tabelle" (Text) und "Plot" (Canvas)
-        self.tabs = ttk.Notebook(right)
-        self.tabs.pack(fill=tk.BOTH, expand=True)
-
-        self.text_tab = ttk.Frame(self.tabs)
-        self.plot_tab = ttk.Frame(self.tabs)
-        self.tabs.add(self.text_tab, text="Tabelle / Text")
-        self.tabs.add(self.plot_tab, text="Plot")
-
-        # Tab für die 3DS<->PC Save-Synchronisation (eigenes Modul).
-        from .sync_gui import add_sync_tab
-        self.sync_tab = add_sync_tab(self.root, self.tabs)
-
-        self.text_widget = tk.Text(self.text_tab, font=("Courier", 10), wrap=tk.NONE)
-        scroll_y = ttk.Scrollbar(self.text_tab, command=self.text_widget.yview)
-        scroll_x = ttk.Scrollbar(self.text_tab, command=self.text_widget.xview,
-                                 orient=tk.HORIZONTAL)
-        self.text_widget.configure(yscrollcommand=scroll_y.set,
-                                   xscrollcommand=scroll_x.set, state=tk.DISABLED)
-        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
-        scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
-        self.text_widget.pack(fill=tk.BOTH, expand=True)
-
-        # Status-Zeile am unteren Rand
-        self.status_var = tk.StringVar(value="Bereit.")
-        ttk.Label(self.root, textvariable=self.status_var,
-                  relief=tk.SUNKEN, anchor=tk.W).pack(side=tk.BOTTOM, fill=tk.X)
-
-    # ------------------------------------------------------------------ #
-    # App-Icon und Dock-Name
-    # ------------------------------------------------------------------ #
-    def _set_app_icon(self, icon_path: Path) -> None:
-        """Setzt das Fenster-Icon (Pokeball) und versucht den Dock-Namen
-        auf macOS auf den lesbaren Titel zu ändern.
-
-        Fehler werden bewusst geschluckt, damit fehlende Bibliotheken
-        oder ungewöhnliche Window-Manager das GUI nicht blockieren.
-        """
-        # 1) Fenster-Icon via Tk PhotoImage.
-        if HAS_PIL and icon_path.exists():
-            try:
-                img = Image.open(icon_path).convert("RGBA")
-                self._app_icon_photo = ImageTk.PhotoImage(img)
-                # `True` heisst: gilt auch für neu geöffnete Toplevels.
-                self.root.iconphoto(True, self._app_icon_photo)
-            except (OSError, ValueError):
-                pass
-
-        # 2) macOS-Dock: Name auf "Pokemon Team-Analyzer" setzen.
-        # Funktioniert nur, wenn `pyobjc` (Foundation) installiert ist.
-        # Ohne pyobjc bleibt der Dock-Eintrag bei "python3.x" - das ist
-        # Apple's Standardverhalten für Skripte ohne .app-Bundle.
-        import sys as _sys
-        if _sys.platform == "darwin":
-            try:
-                from Foundation import NSBundle  # type: ignore
-                bundle = NSBundle.mainBundle()
-                if bundle is not None:
-                    info = (
-                        bundle.localizedInfoDictionary()
-                        or bundle.infoDictionary()
-                    )
-                    if info is not None:
-                        info["CFBundleName"] = "Pokemon Team-Analyzer"
-                        info["CFBundleDisplayName"] = "Pokemon Team-Analyzer"
-            except ImportError:
-                # pyobjc nicht installiert -> Dock-Name bleibt "python3.x".
-                # Das Fenster-Icon und der Title-Bar zeigen aber den richtigen Namen.
-                pass
-
-    # ------------------------------------------------------------------ #
-    # Sprite-Helfer
-    # ------------------------------------------------------------------ #
-    def _photo_for(
-        self,
-        pokemon: Pokemon,
-        size: int = SPRITE_SIZE,
-        allow_download: bool = True,
-    ) -> tk.PhotoImage | None:
-        """Liefert ein Tk-PhotoImage für ein Pokemon, oder None bei Fehler.
-
-        Fertige Bilder werden im Dictionary gecached, damit
-        1. das Resizen pro Pokemon nur einmal stattfindet und
-        2. der Garbage Collector sie nicht einsammelt (Tk-Falle).
-
-        Mit `allow_download=False` werden nur bereits lokal vorhandene
-        Sprites genutzt - keine HTTP-Aufrufe. Das ist wichtig für die
-        Cache-Liste, die viele Pokemon auf einmal rendert.
-        """
+    def _image_for(self, pokemon: Pokemon, size: int = SPRITE_SIZE,
+                   allow_download: bool = True) -> ctk.CTkImage | None:
         if not HAS_PIL:
             return None
         key = (pokemon.pokedex_id, size)
-        if key in self._photo_cache:
-            return self._photo_cache[key]
-
+        if key in self._image_cache:
+            return self._image_cache[key]
         sprite_path = self.client.get_sprite(
             pokemon.pokedex_id, pokemon.sprite_url,
-            allow_download=allow_download,
-        )
+            allow_download=allow_download)
         if sprite_path is None:
             return None
         try:
             img = Image.open(sprite_path).convert("RGBA")
-            img.thumbnail((size, size), Image.LANCZOS)
-            photo = ImageTk.PhotoImage(img)
-        except (OSError, ValueError) as exc:
-            self._set_status(f"Sprite konnte nicht geladen werden: {exc}")
+            image = ctk.CTkImage(light_image=img, dark_image=img,
+                                 size=(size, size))
+        except (OSError, ValueError):
             return None
-        self._photo_cache[key] = photo
-        return photo
+        self._image_cache[key] = image
+        return image
+
+    # ------------------------------------------------------------------ #
+    # Pokemon-Liste (Sidebar)
+    # ------------------------------------------------------------------ #
+    def _populate_cached_pokemon(self) -> None:
+        cache_dir = self.client.cache_dir
+        self._cached_names = sorted(
+            f.stem.removeprefix("pokemon_")
+            for f in cache_dir.glob("pokemon_*.json")
+        ) if cache_dir.exists() else []
+        self._refresh_cache_view()
+
+    def _refresh_cache_view(self) -> None:
+        for child in self.cache_list.winfo_children():
+            child.destroy()
+
+        query = self.search_var.get().strip().lower()
+        matches = ([n for n in self._cached_names if query in n]
+                   if query else list(self._cached_names))
+        total = len(matches)
+        shown = matches[: self.CACHE_DISPLAY_LIMIT]
+
+        for row, name in enumerate(shown):
+            try:
+                pokemon = Pokemon.from_api(self.client.get_pokemon(name))
+            except (PokeAPIError, ValueError):
+                continue
+            item = ctk.CTkFrame(self.cache_list, fg_color="transparent")
+            item.grid(row=row, column=0, sticky="ew", pady=1)
+            item.grid_columnconfigure(1, weight=1)
+
+            image = self._image_for(pokemon, size=28, allow_download=False)
+            if image is not None:
+                ctk.CTkLabel(item, image=image, text="").grid(
+                    row=0, column=0, padx=(2, 6))
+            types = "/".join(GERMAN_TYPES.get(t, t.capitalize())
+                             for t in pokemon.types)
+            ctk.CTkLabel(item, text=f"{pokemon.name.capitalize()}",
+                         anchor="w").grid(row=0, column=1, sticky="w")
+            ctk.CTkLabel(item, text=types, anchor="e",
+                         font=ctk.CTkFont(size=10),
+                         text_color=("gray40", "gray60")).grid(
+                row=0, column=2, sticky="e", padx=4)
+            ctk.CTkButton(item, text="+", width=26, height=22,
+                          command=lambda n=name: self._add_by_name(n)).grid(
+                row=0, column=3, padx=(2, 4))
+
+        if total == 0:
+            self.cache_info.configure(text="Keine Treffer.")
+        elif total > self.CACHE_DISPLAY_LIMIT:
+            self.cache_info.configure(
+                text=f"{self.CACHE_DISPLAY_LIMIT} von {total} - Suche eingrenzen.")
+        else:
+            self.cache_info.configure(text=f"{total} Pokemon")
 
     # ------------------------------------------------------------------ #
     # Team-Aktionen
     # ------------------------------------------------------------------ #
     def _add_pokemon(self) -> None:
-        name = self.name_var.get().strip()
+        name = self.search_var.get().strip()
         if not name:
             return
-        self._add_by_name(name)
-        self.name_var.set("")
+        if self._add_by_name(name):
+            self.search_var.set("")
 
-    def _add_from_cache(self) -> None:
-        selection = self.cache_tree.selection()
-        if not selection:
-            return
-        # Der Name wurde beim Einfügen als iid gesetzt.
-        name = selection[0]
-        self._add_by_name(name)
-
-    def _add_by_name(self, name: str) -> None:
+    def _add_by_name(self, name: str) -> bool:
         try:
-            data = self.client.get_pokemon(name)
-            pokemon = Pokemon.from_api(data)
+            pokemon = Pokemon.from_api(self.client.get_pokemon(name))
             self.team.add(pokemon)
         except (PokeAPIError, ValueError) as exc:
-            # Fehler abfangen und freundlich anzeigen statt zu crashen.
             messagebox.showerror("Fehler", f"{exc}")
             self._set_status(f"Fehler: {exc}")
-            return
+            return False
         self._refresh_team_view()
-        self._set_status(f"{pokemon.name.capitalize()} zum Team hinzugefügt.")
+        self._refresh_analysis()
+        self._set_status(f"{pokemon.name.capitalize()} hinzugefügt.")
+        return True
 
-    def _remove_selected(self) -> None:
-        if self._selected_team_index is None:
-            messagebox.showinfo("Hinweis",
-                                "Bitte zuerst ein Pokemon im Team anklicken.")
-            return
-        members = list(self.team.members)
-        if self._selected_team_index >= len(members):
-            return
-        name = members[self._selected_team_index].name
+    def _remove_member(self, name: str) -> None:
         try:
             self.team.remove(name)
         except KeyError as exc:
             messagebox.showerror("Fehler", str(exc))
             return
-        self._selected_team_index = None
         self._refresh_team_view()
-        self._set_status(f"{name} entfernt.")
+        self._refresh_analysis()
+        self._set_status(f"{name.capitalize()} entfernt.")
 
     def _clear_team(self) -> None:
         self.team = Team(self.team.name)
-        self._selected_team_index = None
         self._refresh_team_view()
-        self._clear_output()
+        self._refresh_analysis()
         self._set_status("Team geleert.")
 
-    def _download_all_pokemon(self) -> None:
-        """Lädt alle Pokemon-Species aus der PokeAPI in den Cache.
-
-        Threading-Aufbau:
-        - Ein Worker-Thread macht die HTTP-Downloads.
-        - Der Worker schreibt Fortschritt und Endergebnis in eine
-          `queue.Queue`. Tkinter-Widgets werden NIE direkt aus dem
-          Worker angefasst (`root.after` aus Fremd-Threads ist nicht
-          thread-safe und produziert "main thread is not in main loop").
-        - Im Main-Thread läuft `_poll_queue` per `root.after` und liest
-          die Queue im Tk-Event-Loop aus - das ist sicher.
-        """
-        if not messagebox.askyesno(
-            "Alle Pokemon laden",
-            "Lädt etwa 1000 Pokemon-Stammformen von der PokeAPI.\n"
-            "Das dauert je nach Verbindung 20-60 Sekunden.\n\n"
-            "Fortfahren?",
-        ):
-            return
-
-        # Fortschrittsdialog aufbauen.
-        progress_win = tk.Toplevel(self.root)
-        progress_win.title("Pokemon werden geladen ...")
-        progress_win.geometry("440x130")
-        progress_win.transient(self.root)
-        progress_win.grab_set()
-        progress_win.protocol("WM_DELETE_WINDOW", lambda: None)
-
-        info_var = tk.StringVar(value="Hole Pokemon-Liste ...")
-        ttk.Label(progress_win, textvariable=info_var,
-                  padding=10).pack(fill=tk.X)
-        bar = ttk.Progressbar(progress_win, mode="determinate",
-                              length=400, maximum=100)
-        bar.pack(padx=10, pady=4)
-
-        # Queue für Worker -> Main-Thread Kommunikation.
-        update_queue: queue.Queue = queue.Queue()
-
-        # Lokaler Import - das fetch-Modul ist optional.
-        from data.fetch_all_pokemon import bulk_fetch
-
-        def _on_progress(done: int, total: int, name: str) -> None:
-            # Wird aus einem Worker-Thread aufgerufen. `Queue.put` ist
-            # thread-safe; Tkinter-Aufrufe finden hier NICHT statt.
-            update_queue.put(("progress", done, total, name))
-
-        def _worker() -> None:
-            try:
-                success, total, pruned = bulk_fetch(
-                    workers=16, prune=True, progress=_on_progress,
-                )
-                update_queue.put(("done", success, total, pruned))
-            except Exception as exc:  # pragma: no cover - GUI-Pfad
-                update_queue.put(("error", str(exc)))
-
-        def _finish_ok(success: int, total: int, pruned: int) -> None:
-            try:
-                progress_win.grab_release()
-            except tk.TclError:
-                pass
-            progress_win.destroy()
-            extra = f", {pruned} alte Einträge entfernt" if pruned else ""
-            self._set_status(
-                f"Bulk-Download fertig: {success}/{total} Pokemon{extra}."
-            )
-            self._populate_cached_pokemon()
-            pruned_msg = (
-                f"\n{pruned} alte Mega-/Form-Einträge wurden entfernt."
-                if pruned else ""
-            )
-            messagebox.showinfo(
-                "Fertig",
-                f"{success} von {total} echten Pokemon-Species im Cache."
-                f"{pruned_msg}\n\n"
-                "Hinweis: die PokeAPI hat aktuell nicht zwingend alle "
-                "1025 Pokemon - 'Total' ist der wahre Stand der API.",
-            )
-
-        def _finish_error(message: str) -> None:
-            try:
-                progress_win.grab_release()
-            except tk.TclError:
-                pass
-            progress_win.destroy()
-            messagebox.showerror("Fehler beim Download", message)
-            self._set_status(f"Download-Fehler: {message}")
-
-        def _poll_queue() -> None:
-            """Pollt die Queue alle 50 ms im Main-Thread. Nur HIER werden
-            Tk-Widgets angefasst - das ist die einzige threadsichere Stelle.
-            """
-            try:
-                while True:
-                    msg = update_queue.get_nowait()
-                    kind = msg[0]
-                    if kind == "progress":
-                        _, done, total, name = msg
-                        # `maximum` wird beim ersten Update gesetzt.
-                        bar["maximum"] = total
-                        bar["value"] = done
-                        info_var.set(f"{done}/{total} - {name}")
-                    elif kind == "done":
-                        _, success, total, pruned = msg
-                        _finish_ok(success, total, pruned)
-                        return  # nicht mehr pollen
-                    elif kind == "error":
-                        _finish_error(msg[1])
-                        return
-            except queue.Empty:
-                pass
-            # Wieder einreihen.
-            self.root.after(50, _poll_queue)
-
-        threading.Thread(target=_worker, daemon=True).start()
-        self.root.after(100, _poll_queue)
-
-    def _auto_complete(self) -> None:
-        """Füllt das aktuelle Team mit besten verfügbaren Kandidaten auf."""
-        # 1. Pool: alle Pokemon aus dem Cache laden.
-        pool: list[Pokemon] = []
-        for cache_file in self.client.cache_dir.glob("pokemon_*.json"):
-            name = cache_file.stem.removeprefix("pokemon_")
-            try:
-                data = self.client.get_pokemon(name)
-                pool.append(Pokemon.from_api(data))
-            except (PokeAPIError, ValueError):
-                continue  # defekte Cache-Datei einfach ignorieren
-        if not pool:
-            messagebox.showinfo(
-                "Hinweis",
-                "Kein Pokemon im Cache. Bitte zuerst ein paar hinzufügen.")
-            return
-
-        # 2. Generations-Filter umwandeln (Anzeige -> Zahl oder None).
-        gen_label = self.gen_var.get()
-        max_gen: int | None
-        if gen_label == "Alle":
-            max_gen = None
-        else:
-            try:
-                max_gen = int(gen_label.removeprefix("Gen ").strip())
-            except ValueError:
-                max_gen = None
-
-        # 3. Greedy-Vervollständigung anwenden.
-        try:
-            completer = TeamCompleter(pool)
-            completer.complete(self.team, max_generation=max_gen)
-        except (ValueError, KeyError) as exc:
-            messagebox.showerror("Fehler beim Auffüllen", str(exc))
-            return
-
-        self._refresh_team_view()
-        gen_msg = "alle Generationen" if max_gen is None else f"bis Gen {max_gen}"
-        self._set_status(
-            f"Team auto-vervollständigt ({gen_msg}, Pool: {len(pool)} Pokemon)."
-        )
-
     def _load_preset(self) -> None:
-        """Lädt das im Dropdown ausgewählte Preset und ersetzt das aktuelle Team."""
         name = self.preset_var.get().strip()
-        if not name:
-            messagebox.showinfo("Hinweis", "Bitte zuerst ein Preset auswählen.")
+        if not name or name == "-":
             return
         try:
             self.team = load_preset(name, self.client)
         except (PokeAPIError, ValueError, KeyError) as exc:
             messagebox.showerror("Fehler beim Laden", str(exc))
-            self._set_status(f"Preset-Fehler: {exc}")
             return
-        self._selected_team_index = None
         self._refresh_team_view()
+        self._refresh_analysis()
         self._set_status(f"Preset geladen: {name}")
 
-    # ------------------------------------------------------------------ #
-    # Analyse-Aktionen (unverändert gegenüber der vorherigen Version)
-    # ------------------------------------------------------------------ #
-    def _require_analyzer(self) -> TeamAnalyzer | None:
-        if len(self.team) == 0:
-            messagebox.showinfo("Hinweis",
-                                "Bitte zuerst mindestens ein Pokemon hinzufügen.")
-            return None
-        return TeamAnalyzer(self.team)
+    def _auto_complete(self) -> None:
+        pool: list[Pokemon] = []
+        for cache_file in self.client.cache_dir.glob("pokemon_*.json"):
+            try:
+                pool.append(Pokemon.from_api(
+                    self.client.get_pokemon(
+                        cache_file.stem.removeprefix("pokemon_"))))
+            except (PokeAPIError, ValueError):
+                continue
+        if not pool:
+            messagebox.showinfo("Hinweis", "Kein Pokemon im Cache.")
+            return
+        gen_label = self.gen_var.get()
+        max_gen = (None if gen_label == "Alle"
+                   else int(gen_label.removeprefix("Gen ").strip()))
+        try:
+            TeamCompleter(pool).complete(self.team, max_generation=max_gen)
+        except (ValueError, KeyError) as exc:
+            messagebox.showerror("Fehler beim Auffüllen", str(exc))
+            return
+        self._refresh_team_view()
+        self._refresh_analysis()
+        self._set_status("Team auto-vervollständigt.")
 
-    def _show_stats(self) -> None:
-        analyzer = self._require_analyzer()
+    # ------------------------------------------------------------------ #
+    # Team-Karten rendern
+    # ------------------------------------------------------------------ #
+    def _refresh_team_view(self) -> None:
+        for child in self.team_frame.winfo_children():
+            child.destroy()
+
+        if len(self.team) == 0:
+            ctk.CTkLabel(
+                self.team_frame,
+                text="Noch leer.\nLinks ein Pokemon suchen\nund mit + hinzufügen.",
+                text_color=("gray40", "gray60"), justify="center",
+            ).grid(row=0, column=0, pady=40)
+            return
+
+        for i, pokemon in enumerate(self.team.members):
+            card = ctk.CTkFrame(self.team_frame, corner_radius=12)
+            card.grid(row=i, column=0, sticky="ew", pady=4)
+            card.grid_columnconfigure(1, weight=1)
+
+            image = self._image_for(pokemon)
+            if image is not None:
+                ctk.CTkLabel(card, image=image, text="").grid(
+                    row=0, column=0, rowspan=3, padx=10, pady=8)
+
+            ctk.CTkLabel(
+                card, text=f"{pokemon.name.capitalize()}",
+                font=ctk.CTkFont(size=14, weight="bold"), anchor="w",
+            ).grid(row=0, column=1, sticky="w", pady=(8, 0))
+            ctk.CTkLabel(
+                card, text=f"#{pokemon.pokedex_id} · Total {pokemon.total_stats()}",
+                font=ctk.CTkFont(size=11),
+                text_color=("gray40", "gray60"), anchor="w",
+            ).grid(row=1, column=1, sticky="w")
+
+            badges = ctk.CTkFrame(card, fg_color="transparent")
+            badges.grid(row=2, column=1, sticky="w", pady=(2, 8))
+            for j, t in enumerate(pokemon.types):
+                ctk.CTkLabel(
+                    badges, text=GERMAN_TYPES.get(t, t.capitalize()),
+                    fg_color=TYPE_COLORS.get(t, "#777777"),
+                    text_color="white", corner_radius=8,
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    padx=8, height=20,
+                ).grid(row=0, column=j, padx=(0, 4))
+
+            ctk.CTkButton(
+                card, text="✕", width=28, height=28,
+                fg_color="transparent", border_width=1,
+                hover_color=("#fca5a5", "#7f1d1d"),
+                command=lambda n=pokemon.name: self._remove_member(n),
+            ).grid(row=0, column=2, rowspan=3, padx=10)
+
+    # ------------------------------------------------------------------ #
+    # Analyse: Tabs füllen sich automatisch
+    # ------------------------------------------------------------------ #
+    def _on_tab_change(self) -> None:
+        self._refresh_analysis()
+
+    def _refresh_analysis(self) -> None:
+        current = self.tabs.get()
+        if current == "Tabelle":
+            self._render_stats()
+        elif current == "Coverage":
+            self._render_coverage()
+        elif current == "Plots":
+            self._render_plot()
+
+    def _analyzer(self) -> TeamAnalyzer | None:
+        return TeamAnalyzer(self.team) if len(self.team) > 0 else None
+
+    def _fill_textbox(self, box: ctk.CTkTextbox, content: str) -> None:
+        box.configure(state="normal")
+        box.delete("1.0", "end")
+        box.insert("1.0", content)
+        box.configure(state="disabled")
+
+    def _render_stats(self) -> None:
+        analyzer = self._analyzer()
         if analyzer is None:
+            self._fill_textbox(self.stats_text,
+                               "Füge zuerst Pokemon zum Team hinzu.")
             return
         df = analyzer.to_stats_dataframe()
         summary = analyzer.summary()
-        text = (
-            "Stats pro Pokemon:\n"
-            f"{df.to_string()}\n\n"
-            "Aggregierte Statistik:\n"
-            f"{summary.to_string()}"
-        )
-        self._show_text(text)
+        self._fill_textbox(
+            self.stats_text,
+            f"Stats pro Pokemon:\n{df.to_string()}\n\n"
+            f"Aggregierte Statistik:\n{summary.to_string()}")
 
-    def _show_coverage(self) -> None:
-        analyzer = self._require_analyzer()
+    def _render_coverage(self) -> None:
+        analyzer = self._analyzer()
         if analyzer is None:
+            self._fill_textbox(self.coverage_text,
+                               "Füge zuerst Pokemon zum Team hinzu.")
             return
         cov = analyzer.type_coverage()
         weakest = analyzer.biggest_weaknesses()
-        text = (
-            "Typ-Coverage (Anzahl Teammitglieder pro Kategorie):\n"
-            f"{cov.to_string()}\n\n"
-            "Grösste Schwächen (Top 5):\n"
-            f"{weakest.to_string()}"
-        )
-        self._show_text(text)
+        self._fill_textbox(
+            self.coverage_text,
+            "Typ-Coverage (Teammitglieder pro Kategorie):\n"
+            f"{cov.to_string()}\n\nGrösste Schwächen (Top 5):\n"
+            f"{weakest.to_string()}")
 
-    def _plot_totals(self) -> None:
-        analyzer = self._require_analyzer()
+    def _render_plot(self) -> None:
+        self._clear_plot_area()
+        analyzer = self._analyzer()
         if analyzer is None:
+            ctk.CTkLabel(self.plot_area,
+                         text="Füge zuerst Pokemon zum Team hinzu.",
+                         text_color=("gray40", "gray60")).pack(pady=40)
             return
-        self._show_plot(lambda ax: analyzer.plot_total_stats(ax=ax))
-
-    def _plot_stats(self) -> None:
-        analyzer = self._require_analyzer()
-        if analyzer is None:
-            return
-        self._show_plot(lambda ax: analyzer.plot_stats_comparison(ax=ax),
-                        figsize=(8, 5))
-
-    def _plot_heatmap(self) -> None:
-        analyzer = self._require_analyzer()
-        if analyzer is None:
-            return
-        self._show_plot(lambda _ax: analyzer.plot_type_coverage_heatmap(),
-                        from_method=True)
-
-    # ------------------------------------------------------------------ #
-    # Anzeige-Helfer
-    # ------------------------------------------------------------------ #
-    def _show_text(self, content: str) -> None:
-        self.tabs.select(self.text_tab)
-        self.text_widget.configure(state=tk.NORMAL)
-        self.text_widget.delete("1.0", tk.END)
-        self.text_widget.insert("1.0", content)
-        self.text_widget.configure(state=tk.DISABLED)
-
-    def _show_plot(self, plot_fn, figsize=(7, 4), from_method: bool = False) -> None:
-        self._clear_plot_tab()
-        if from_method:
-            ax = plot_fn(None)
-            fig = ax.figure
+        choice = self.plot_choice.get()
+        if choice == "Gesamt-Stats":
+            fig, ax = plt.subplots(figsize=(7, 4))
+            analyzer.plot_total_stats(ax=ax)
+        elif choice == "Stats-Vergleich":
+            fig, ax = plt.subplots(figsize=(8, 5))
+            analyzer.plot_stats_comparison(ax=ax)
         else:
-            fig, ax = plt.subplots(figsize=figsize)
-            plot_fn(ax)
-        canvas = FigureCanvasTkAgg(fig, master=self.plot_tab)
+            ax = analyzer.plot_type_coverage_heatmap()
+            fig = ax.figure
+        self._style_figure(fig)
+        canvas = FigureCanvasTkAgg(fig, master=self.plot_area)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        canvas.get_tk_widget().pack(fill="both", expand=True)
         self._current_canvas = canvas
-        self.tabs.select(self.plot_tab)
 
-    def _clear_plot_tab(self) -> None:
-        for child in self.plot_tab.winfo_children():
+    def _style_figure(self, fig) -> None:
+        """Passt die Plot-Farben an den Hell/Dunkel-Modus an."""
+        if ctk.get_appearance_mode() != "Dark":
+            return
+        fg = "#e5e5e5"
+        fig.patch.set_facecolor("#1f1f1f")
+        for ax in fig.axes:
+            ax.set_facecolor("#2a2a2a")
+            ax.tick_params(colors=fg)
+            ax.xaxis.label.set_color(fg)
+            ax.yaxis.label.set_color(fg)
+            ax.title.set_color(fg)
+            for spine in ax.spines.values():
+                spine.set_color("#555555")
+
+    def _clear_plot_area(self) -> None:
+        for child in self.plot_area.winfo_children():
             child.destroy()
         if self._current_canvas is not None:
             plt.close(self._current_canvas.figure)
             self._current_canvas = None
 
-    def _clear_output(self) -> None:
-        self._clear_plot_tab()
-        self.text_widget.configure(state=tk.NORMAL)
-        self.text_widget.delete("1.0", tk.END)
-        self.text_widget.configure(state=tk.DISABLED)
-
     # ------------------------------------------------------------------ #
-    # Team-Anzeige neu rendern (mit Sprites)
+    # Bulk-Download (Worker-Thread + Queue, wie gehabt)
     # ------------------------------------------------------------------ #
-    def _refresh_team_view(self) -> None:
-        # Alles entsorgen und neu aufbauen - das Team hat max. 6 Slots, daher
-        # ist das auch performance-mässig vernachlässigbar.
-        for child in self.team_inner.winfo_children():
-            child.destroy()
-
-        if len(self.team) == 0:
-            ttk.Label(self.team_inner,
-                      text="Noch leer. Pokemon links auswählen oder eingeben.",
-                      foreground="#666666").pack(pady=20)
+    def _download_all_pokemon(self) -> None:
+        if not messagebox.askyesno(
+            "Alle Pokemon laden",
+            "Lädt etwa 1000 Pokemon von der PokeAPI (20-60 Sekunden).\n\n"
+            "Fortfahren?",
+        ):
             return
 
-        for i, pokemon in enumerate(self.team.members):
-            row = ttk.Frame(self.team_inner, relief="ridge", padding=6)
-            row.pack(fill=tk.X, pady=2)
-            # Hervorhebung wenn ausgewählt
-            if i == self._selected_team_index:
-                row.configure(relief="solid")
+        win = ctk.CTkToplevel(self.root)
+        win.title("Pokemon werden geladen ...")
+        win.geometry("440x130")
+        win.transient(self.root)
+        win.grab_set()
+        win.protocol("WM_DELETE_WINDOW", lambda: None)
 
-            # Sprite
-            photo = self._photo_for(pokemon)
-            if photo is not None:
-                lbl = ttk.Label(row, image=photo)
-                lbl.image = photo  # zusätzliche Referenz: Tk-typische Falle vermeiden
-                lbl.pack(side=tk.LEFT, padx=(0, 8))
+        info_var = tk.StringVar(value="Hole Pokemon-Liste ...")
+        ctk.CTkLabel(win, textvariable=info_var).pack(padx=14, pady=(16, 6))
+        bar = ctk.CTkProgressBar(win, width=380)
+        bar.set(0)
+        bar.pack(padx=14, pady=4)
 
-            # Textblock
-            types_str = " / ".join(t.capitalize() for t in pokemon.types)
-            info = ttk.Frame(row)
-            info.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            ttk.Label(info, text=f"#{pokemon.pokedex_id} {pokemon.name.capitalize()}",
-                      font=("Helvetica", 11, "bold")).pack(anchor=tk.W)
-            ttk.Label(info, text=types_str, foreground="#444444").pack(anchor=tk.W)
-            ttk.Label(info, text=f"Total: {pokemon.total_stats()}",
-                      foreground="#1d4ed8").pack(anchor=tk.W)
+        update_queue: queue.Queue = queue.Queue()
+        from data.fetch_all_pokemon import bulk_fetch
 
-            # Klick auf die Reihe wählt sie aus
-            for widget in (row, info, *info.winfo_children()):
-                widget.bind("<Button-1>",
-                            lambda _e, idx=i: self._select_team_member(idx))
-
-    def _select_team_member(self, index: int) -> None:
-        self._selected_team_index = index
-        self._refresh_team_view()
-        member = self.team.members[index]
-        self._set_status(f"Ausgewählt: {member.name.capitalize()}")
-
-    # ------------------------------------------------------------------ #
-    # Cache-Liste füllen
-    # ------------------------------------------------------------------ #
-    # Liste der bekannten Cache-Namen wird einmal eingelesen und dann nur
-    # noch in `_refresh_cache_view` gefiltert. So bleibt die Suche flüssig
-    # auch bei 1300+ Pokemon im Cache.
-    CACHE_DISPLAY_LIMIT = 80
-
-    def _populate_cached_pokemon(self) -> None:
-        """Liest die Liste der Pokemon-Namen aus dem Cache (sehr günstig:
-        nur Dateinamen, keine JSON-Parsen, keine Netz-Aufrufe).
-        Die eigentliche Anzeige passiert in `_refresh_cache_view`.
-        """
-        cache_dir = self.client.cache_dir
-        if not cache_dir.exists():
-            self._cached_names: list[str] = []
-        else:
-            self._cached_names = sorted(
-                f.stem.removeprefix("pokemon_")
-                for f in cache_dir.glob("pokemon_*.json")
-            )
-        self._refresh_cache_view()
-
-    def _refresh_cache_view(self) -> None:
-        """Zeigt die Pokemon-Namen, die zum Suchfilter passen, in der Treeview.
-
-        - Standardansicht (kein Suchtext): die ersten `CACHE_DISPLAY_LIMIT`
-          Einträge, alphabetisch. Das hält die GUI flott bei grossen Caches.
-        - Mit Suchtext wird nach Substring gefiltert; die Liste bleibt
-          ebenfalls auf das Limit beschränkt.
-        - Sprites werden nur angezeigt, wenn sie bereits lokal vorhanden
-          sind (`allow_download=False`), sonst nur Name und Typen.
-        """
-        # Treeview leeren.
-        for item in self.cache_tree.get_children():
-            self.cache_tree.delete(item)
-
-        query = self.cache_search_var.get().strip().lower()
-        names_all = getattr(self, "_cached_names", [])
-        if query:
-            matches = [n for n in names_all if query in n]
-        else:
-            matches = list(names_all)
-        total_matches = len(matches)
-        shown = matches[: self.CACHE_DISPLAY_LIMIT]
-
-        for name in shown:
-            # JSON-Parse ist günstig (~1ms pro Pokemon), aber nur für die
-            # tatsächlich gezeigten Einträge - nicht für alle 1300+.
+        def _worker() -> None:
             try:
-                data = self.client.get_pokemon(name)
-                pokemon = Pokemon.from_api(data)
-            except (PokeAPIError, ValueError):
-                continue
-            types_str = "/".join(t.capitalize() for t in pokemon.types)
-            photo = self._photo_for(pokemon, size=32, allow_download=False)
-            kwargs = {"text": f"{pokemon.name.capitalize()}",
-                      "values": (types_str,)}
-            if photo is not None:
-                kwargs["image"] = photo
-            self.cache_tree.insert("", tk.END, iid=name, **kwargs)
+                success, total, pruned = bulk_fetch(
+                    workers=16, prune=True,
+                    progress=lambda d, t, n: update_queue.put(
+                        ("progress", d, t, n)))
+                update_queue.put(("done", success, total, pruned))
+            except Exception as exc:  # pragma: no cover - GUI-Pfad
+                update_queue.put(("error", str(exc)))
 
-        # Info-Zeile mit Anzahl Treffer und ggf. Limit-Hinweis aktualisieren.
-        if total_matches == 0:
-            self.cache_info_var.set("Keine Treffer.")
-        elif total_matches > self.CACHE_DISPLAY_LIMIT:
-            self.cache_info_var.set(
-                f"{self.CACHE_DISPLAY_LIMIT} von {total_matches} angezeigt - "
-                "Suche eingrenzen für mehr."
-            )
-        else:
-            self.cache_info_var.set(f"{total_matches} im Cache.")
+        def _poll() -> None:
+            try:
+                while True:
+                    msg = update_queue.get_nowait()
+                    if msg[0] == "progress":
+                        _, done, total, name = msg
+                        bar.set(done / max(total, 1))
+                        info_var.set(f"{done}/{total} - {name}")
+                    elif msg[0] == "done":
+                        _, success, total, _pruned = msg
+                        win.grab_release()
+                        win.destroy()
+                        self._set_status(
+                            f"Download fertig: {success}/{total} Pokemon.")
+                        self._populate_cached_pokemon()
+                        return
+                    else:
+                        win.grab_release()
+                        win.destroy()
+                        messagebox.showerror("Fehler beim Download", msg[1])
+                        return
+            except queue.Empty:
+                pass
+            self.root.after(50, _poll)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        self.root.after(100, _poll)
 
     def _set_status(self, msg: str) -> None:
         self.status_var.set(msg)
@@ -780,7 +653,9 @@ class PokemonTeamGUI:
 
 def main() -> None:
     """Startet die GUI."""
-    root = tk.Tk()
+    ctk.set_appearance_mode("system")   # hell/dunkel folgt dem OS
+    ctk.set_default_color_theme("blue")
+    root = ctk.CTk()
     PokemonTeamGUI(root)
     root.mainloop()
 

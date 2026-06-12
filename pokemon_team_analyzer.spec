@@ -12,6 +12,8 @@ entsteht nur auf Windows, eine .app nur auf macOS.
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files
+
 APP_NAME = "Pokemon Team-Analyzer"
 ROOT = Path(SPECPATH)
 
@@ -22,6 +24,8 @@ datas = [
     (str(ROOT / "data" / "sprites"), "data/sprites"),
     (str(ROOT / "data" / "app_icon.png"), "data"),
 ]
+# CustomTkinter bringt eigene Theme-JSONs/Assets mit - mit einpacken.
+datas += collect_data_files("customtkinter")
 
 a = Analysis(
     ["app.py"],
@@ -30,7 +34,7 @@ a = Analysis(
     datas=datas,
     # `data.fetch_all_pokemon` wird im GUI erst zur Laufzeit importiert
     # (Bulk-Download-Button) - PyInstaller sieht das nicht automatisch.
-    hiddenimports=["data.fetch_all_pokemon"],
+    hiddenimports=["data.fetch_all_pokemon", "customtkinter"],
     hookspath=[],
     runtime_hooks=[],
     excludes=["jupyter", "notebook", "IPython"],

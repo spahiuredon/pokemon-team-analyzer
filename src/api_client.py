@@ -192,7 +192,7 @@ class PokeAPIClient:
             try:
                 req = urllib.request.Request(
                     url,
-                    headers={"User-Agent": "INFPROG2-PokemonAnalyzer/1.0"},
+                    headers={"User-Agent": "PokemonTeamAnalyzer/1.0"},
                 )
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     if resp.status != 200:

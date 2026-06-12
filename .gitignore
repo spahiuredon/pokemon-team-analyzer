@@ -22,3 +22,8 @@ data/cache/
 
 # Jupyter
 .ipynb_checkpoints
+
+# PyInstaller-Builds (Artefakte, nicht versionieren)
+build/
+dist/
+venv-build/

@@ -3,6 +3,7 @@ matplotlib>=3.7
 numpy>=1.24
 jupyter>=1.0
 Pillow>=10.0
+customtkinter>=5.2
 # Optional, nur für macOS: setzt den Dock-Namen auf "Pokemon Team-Analyzer"
 # statt "python3.x". Ohne diese Library funktioniert das GUI trotzdem, nur
 # der Dock-Eintrag bleibt der Standard-Python-Name.
